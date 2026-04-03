@@ -40,31 +40,20 @@ export async function selectHero(
   // Step 3 — load matrix
   const entry = lookupMatrix(stateKey);
 
-  // Step 4 — score (AI with fast timeout, deterministic fallback)
-  // Race: give AI 5s max, otherwise use deterministic instantly
-  const AI_RACE_MS = 5000;
-
+  // Step 4 — score via AI (no race — deterministic already rendered by reselectHeroFast)
   let scoring: ReturnType<typeof scoreDeterministic>;
   let method: HeroDecision["selection_method"];
   let ai_error: string | null = null;
 
-  const aiPromise = scoreHeroOptions(state, stateKey, entry);
-  const raceResult = await Promise.race([
-    aiPromise.then((r) => ({ source: "ai" as const, result: r })),
-    new Promise<{ source: "timeout"; result: null }>((resolve) =>
-      setTimeout(() => resolve({ source: "timeout", result: null }), AI_RACE_MS)
-    ),
-  ]);
+  const aiResult = await scoreHeroOptions(state, stateKey, entry);
 
-  if (raceResult.source === "ai" && raceResult.result) {
-    scoring = raceResult.result;
+  if (aiResult) {
+    scoring = aiResult;
     method = "ai";
   } else {
     scoring = scoreDeterministic(state, entry);
     method = "deterministic";
-    ai_error = raceResult.source === "timeout"
-      ? `AI timed out (>${AI_RACE_MS}ms)`
-      : "AI returned null (fetch failed or invalid response)";
+    ai_error = "AI returned null (fetch failed or invalid response)";
   }
 
   // Step 5 — apply rules
