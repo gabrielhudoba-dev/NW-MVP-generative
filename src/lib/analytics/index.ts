@@ -3,3 +3,4 @@ export { track, trackOnce, setTrackContext, observeScrollBelowHero, markHeroMoun
 export { detectDevice, type DeviceContext } from "./device";
 export { detectAcquisition, type AcquisitionContext, type ReferrerGroup } from "./acquisition";
 export { getSessionId } from "./session";
+export { buildTrackingContext, buildHeroVariantPayload, buildSectionSequencePayload } from "./build-event-payload";

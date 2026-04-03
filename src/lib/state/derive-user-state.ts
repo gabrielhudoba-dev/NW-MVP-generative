@@ -1,13 +1,14 @@
-import type { UserStateVector } from "./types";
-import type { VisitorContext } from "../personalization";
+/**
+ * Deterministic user state derivation.
+ *
+ * Transforms raw context signals into a continuous 0–1 state vector.
+ * No AI — pure logic. This is the foundation for all downstream decisions.
+ */
+
+import type { UserStateVector } from "./state-types";
+import type { VisitorContext } from "../context/collect-context";
 import type { DeviceContext } from "../analytics/device";
 
-/**
- * Derives a numeric user state vector from context + behavior signals.
- *
- * All scores are 0–1, derived deterministically.
- * The AI layer starts later — this is pure logic.
- */
 export function deriveUserState(
   ctx: VisitorContext,
   device: DeviceContext
@@ -37,7 +38,7 @@ export function deriveUserState(
     trust += 0.15;
   } else if (ref === "social") {
     trust -= 0.05;
-    attention -= 0.1; // social traffic is more distracted
+    attention -= 0.1;
   } else if (ref === "search") {
     intent += 0.15;
     energy += 0.1;
@@ -70,10 +71,8 @@ export function deriveUserState(
     decision_speed -= 0.1;
   }
 
-  // ── Weekend detection ──
-  const day = new Date().getDay();
-  const isWeekend = day === 0 || day === 6;
-  if (isWeekend) {
+  // ── Weekend ──
+  if (ctx.isWeekend) {
     energy -= 0.1;
     decision_speed -= 0.1;
     attention -= 0.05;
@@ -83,13 +82,12 @@ export function deriveUserState(
   if (device.device_type === "mobile") {
     energy -= 0.1;
     attention -= 0.1;
-    decision_speed += 0.05; // mobile users decide faster or leave
+    decision_speed += 0.05;
   } else if (device.device_type === "desktop") {
     energy += 0.05;
     attention += 0.1;
   }
 
-  // ── Clamp all to 0–1 ──
   return {
     intent_score: clamp(intent),
     trust_score: clamp(trust),
@@ -102,23 +100,4 @@ export function deriveUserState(
 
 function clamp(v: number): number {
   return Math.round(Math.min(1, Math.max(0, v)) * 100) / 100;
-}
-
-/**
- * Converts the continuous state vector into a discrete state key
- * for matrix lookup.
- *
- * Format: {intent_bucket}_{trust_bucket}_{energy_bucket}
- */
-export function deriveStateKey(state: UserStateVector): string {
-  const intent =
-    state.intent_score >= 0.6 ? "ready" :
-    state.intent_score >= 0.35 ? "evaluating" : "exploring";
-
-  const trust =
-    state.trust_score >= 0.5 ? "hightrust" :
-    state.trust_score >= 0.35 ? "medtrust" : "lowtrust";
-  const energy = state.energy_score >= 0.45 ? "highenergy" : "lowenergy";
-
-  return `${intent}_${trust}_${energy}`;
 }

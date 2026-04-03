@@ -1,9 +1,9 @@
-import { Hero } from "@/components/Hero";
+import { PageOrchestrator } from "@/components/PageOrchestrator";
 
 export default function Home() {
   return (
     <main>
-      <Hero />
+      <PageOrchestrator />
     </main>
   );
 }

@@ -1,6 +1,15 @@
-import type { VariantId } from "./variants";
-import type { AcquisitionContext } from "./analytics/acquisition";
-import { detectAcquisition } from "./analytics/acquisition";
+/**
+ * Context collection — gathers all visitor signals into a single object.
+ *
+ * Replaces the old personalization.ts.
+ * No variant assignment — the decision engine handles selection.
+ */
+
+import type { AcquisitionContext } from "../analytics/acquisition";
+import { detectAcquisition } from "../analytics/acquisition";
+import { getTimeOfDay, isWeekend, getLocale, getLanguage, type TimeOfDay } from "./normalize-context";
+
+// ─── Types ──────────────────────────────────────────────────
 
 export interface WeatherContext {
   temp: number | null;
@@ -9,8 +18,8 @@ export interface WeatherContext {
 }
 
 export interface VisitorContext {
-  variant: VariantId;
-  timeOfDay: "morning" | "working" | "evening";
+  timeOfDay: TimeOfDay;
+  isWeekend: boolean;
   isReturning: boolean;
   locale: string;
   language: string;
@@ -19,61 +28,30 @@ export interface VisitorContext {
   acquisition: AcquisitionContext;
 }
 
+// ─── Storage ────────────────────────────────────────────────
+
 const STORAGE_KEY = "nw_visitor";
-const VARIANT_KEY = "nw_variant";
 
 interface StoredVisitor {
   firstSeen: number;
   visits: number;
-  variant: VariantId;
 }
 
-function getTimeOfDay(): VisitorContext["timeOfDay"] {
-  const hour = new Date().getHours();
-  if (hour >= 6 && hour < 9) return "morning";
-  if (hour >= 9 && hour < 18) return "working";
-  return "evening";
-}
+// ─── Collection ─────────────────────────────────────────────
 
 /**
- * Picks variant based on UTM or assigns randomly with sticky persistence.
+ * Detects full visitor context. Call once on mount (client-side only).
  */
-function resolveVariant(acq: AcquisitionContext): VariantId {
-  // UTM-based overrides
-  if (acq.utm_source === "linkedin" || acq.utm_medium === "social") return "B";
-  if (acq.utm_source === "google" || acq.utm_medium === "cpc") return "C";
-  if (acq.utm_campaign?.includes("product")) return "A";
-
-  // Check persisted variant
-  if (typeof window !== "undefined") {
-    const stored = localStorage.getItem(VARIANT_KEY);
-    if (stored === "A" || stored === "B" || stored === "C") return stored;
-  }
-
-  // Random assignment, weighted equally
-  const roll = Math.random();
-  if (roll < 0.33) return "A";
-  if (roll < 0.66) return "B";
-  return "C";
-}
-
-/**
- * Detects full visitor context. Call on mount (client-side).
- */
-export function detectVisitorContext(): VisitorContext {
+export function collectContext(): VisitorContext {
   const acquisition = detectAcquisition();
-  const variant = resolveVariant(acquisition);
-
   let isReturning = false;
 
   if (typeof window !== "undefined") {
-    localStorage.setItem(VARIANT_KEY, variant);
-
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       const stored: StoredVisitor = raw
         ? JSON.parse(raw)
-        : { firstSeen: Date.now(), visits: 0, variant };
+        : { firstSeen: Date.now(), visits: 0 };
 
       stored.visits += 1;
       isReturning = stored.visits > 1;
@@ -83,15 +61,12 @@ export function detectVisitorContext(): VisitorContext {
     }
   }
 
-  const locale = typeof navigator !== "undefined" ? navigator.language : "en-US";
-  const language = locale.split("-")[0];
-
   return {
-    variant,
     timeOfDay: getTimeOfDay(),
+    isWeekend: isWeekend(),
     isReturning,
-    locale,
-    language,
+    locale: getLocale(),
+    language: getLanguage(),
     country: null,
     weather: { temp: null, condition: null, city: null },
     acquisition,
@@ -102,9 +77,8 @@ export function detectVisitorContext(): VisitorContext {
  * Fetches weather based on IP location via wttr.in.
  * Non-blocking, no API key needed.
  */
-export async function detectWeather(): Promise<WeatherContext> {
+export async function fetchWeather(): Promise<WeatherContext> {
   const empty: WeatherContext = { temp: null, condition: null, city: null };
-
   if (typeof window === "undefined") return empty;
 
   try {
@@ -128,7 +102,7 @@ export async function detectWeather(): Promise<WeatherContext> {
 }
 
 /**
- * Resolves the country from server-side headers (Vercel provides this).
+ * Resolves country from server-side headers (Vercel).
  */
 export function getCountryFromHeaders(headers: Headers): string | null {
   return headers.get("x-vercel-ip-country") ?? null;

@@ -1,24 +1,34 @@
 /**
- * Generic decision engine.
+ * Decision engine — orchestrates the full decision pipeline.
  *
  * Pipeline:
- *   1. Derive user state vector from context
- *   2. Derive state key for matrix lookup
- *   3. Load allowed options from section matrix
- *   4. Score options (AI or deterministic fallback)
- *   5. Apply section rules/guardrails
- *   6. Assemble final content from winning options
- *   7. Return decision metadata for tracking
+ *   1. Collect context → derive state vector
+ *   2. Load allowed options (matrix / sequence config)
+ *   3. Score options (deterministic)
+ *   4. Apply guardrails
+ *   5. Assemble final content
+ *   6. (Async) AI scoring upgrade
  *
- * The engine is section-agnostic — all section-specific logic
- * lives in the SectionConfig provided by each section.
+ * Two entry points:
+ *   - runPageDecisionFast()  — synchronous, deterministic only
+ *   - runPageDecision()      — async, tries AI upgrade
  */
 
-import type { Decision, SectionConfig, ScoringResult, Rule, UserStateVector, SlotScore } from "./types";
-import type { VisitorContext } from "../personalization";
+import type { UserStateVector } from "../state/state-types";
+import type { VisitorContext } from "../context/collect-context";
 import type { DeviceContext } from "../analytics/device";
-import { deriveUserState, deriveStateKey } from "./derive-user-state";
+import type { HeroDecision, SectionSequenceDecision, PageDecision, ScoringResult } from "./types";
+import { deriveUserState } from "../state/derive-user-state";
+import { deriveStateKey } from "../state/state-types";
+import { loadHeroMatrix } from "../matrix/hero-matrix";
+import { scoreHeroDeterministic } from "./select-hero";
+import { applyHeroGuardrails } from "./apply-guardrails";
+import { assembleHero } from "./assemble-hero";
+import { selectSectionsDeterministic, applySectionAIScores } from "./select-sections";
 import { openaiChat, SCORING_VERSION } from "../ai/openai-client";
+import { buildHeroAIPrompt, HERO_AI_SYSTEM_MESSAGE } from "../ai/score-hero-options";
+import { buildSectionAIPrompt, SECTION_AI_SYSTEM_MESSAGE } from "../ai/score-section-sequence";
+import { parseHeroAIResponse, parseSectionAIResponse } from "../ai/schemas";
 
 // ─── Snapshot ID ────────────────────────────────────────────
 
@@ -28,62 +38,32 @@ function generateSnapshotId(): string {
   return `snap_${Date.now()}_${++snapshotCounter}`;
 }
 
-// ─── Rules Engine ───────────────────────────────────────────
+// ─── Hero Decision (Deterministic) ──────────────────────────
 
-function applyRules(
-  scores: Record<string, SlotScore[]>,
-  rules: Rule[],
+function runHeroDeterministic(
   state: UserStateVector,
-  device: DeviceContext
-): { scores: Record<string, SlotScore[]>; rules_applied: string[] } {
-  const rules_applied: string[] = [];
-  let current = structuredClone(scores);
+  stateKey: string,
+  device: DeviceContext,
+  snapshotId: string
+): HeroDecision {
+  const matrix = loadHeroMatrix(stateKey);
+  let scoring = scoreHeroDeterministic(state, matrix);
 
-  for (const rule of rules) {
-    if (rule.condition(state, device)) {
-      current = rule.apply(current);
-      rules_applied.push(rule.id);
-    }
-  }
-
-  return { scores: current, rules_applied };
-}
-
-// ─── Instant Deterministic Decision ─────────────────────────
-
-/**
- * Synchronous, 0ms — always produces a result.
- * Used for instant first render before AI responds.
- */
-export function runDecisionFast<T>(
-  config: SectionConfig<T>,
-  ctx: VisitorContext,
-  device: DeviceContext
-): Decision<T> {
-  const state = deriveUserState(ctx, device);
-  const stateKey = deriveStateKey(state);
-  const entry = config.lookupMatrix(stateKey);
-
-  let scoring = config.scoreDeterministic(state, entry);
-  const { scores: filteredScores, rules_applied } = applyRules(
-    scoring.scores,
-    config.rules,
-    state,
-    device
+  const { scores: filteredScores, rules_applied } = applyHeroGuardrails(
+    scoring.scores, state, device
   );
   scoring = { ...scoring, scores: filteredScores };
 
   let result;
   try {
-    result = config.assemble(scoring.scores);
+    result = assembleHero(scoring.scores);
   } catch {
-    const fallback = config.scoreDeterministic(state, entry);
-    result = config.assemble(fallback.scores);
+    const fallback = scoreHeroDeterministic(state, matrix);
+    result = assembleHero(fallback.scores);
     scoring = fallback;
   }
 
   return {
-    section_id: config.section_id,
     content: result.content,
     selected_ids: result.selected_ids,
     state_vector: state,
@@ -93,40 +73,34 @@ export function runDecisionFast<T>(
     rejected_ids: result.rejected_ids,
     rules_applied,
     ai_error: "deterministic-only (instant render)",
-    snapshot_id: generateSnapshotId(),
+    snapshot_id: snapshotId,
     timestamp: Date.now(),
   };
 }
 
-// ─── Full Decision with AI Scoring ──────────────────────────
+// ─── Hero Decision (AI) ────────────────────────────────────
 
-/**
- * Async — tries AI scoring, falls back to deterministic.
- * The hero already renders via runDecisionFast(); this upgrades it.
- */
-export async function runDecision<T>(
-  config: SectionConfig<T>,
+async function runHeroAI(
+  state: UserStateVector,
+  stateKey: string,
   ctx: VisitorContext,
   device: DeviceContext,
-  snapshotId?: string
-): Promise<Decision<T>> {
-  const state = deriveUserState(ctx, device);
-  const stateKey = deriveStateKey(state);
-  const entry = config.lookupMatrix(stateKey);
+  snapshotId: string
+): Promise<HeroDecision> {
+  const matrix = loadHeroMatrix(stateKey);
 
   let scoring: ScoringResult;
-  let method: Decision<T>["selection_method"];
+  let method: HeroDecision["selection_method"];
   let ai_error: string | null = null;
 
-  // Try AI scoring
-  const prompt = config.buildAIPrompt(state, stateKey, entry, ctx, device);
+  const prompt = buildHeroAIPrompt(state, stateKey, matrix, ctx, device);
   const aiResult = await openaiChat<unknown>([
-    { role: "system", content: "You are an expert in conversion optimization for B2B decision-making. Your task is to evaluate predefined content options and score their likelihood of leading to a booked call. Do NOT generate new copy. Only score provided options. Output only valid JSON." },
+    { role: "system", content: HERO_AI_SYSTEM_MESSAGE },
     { role: "user", content: prompt },
   ]);
 
   if (aiResult) {
-    const parsed = config.parseAIResponse(aiResult.data);
+    const parsed = parseHeroAIResponse(aiResult.data);
     if (parsed) {
       scoring = {
         scores: parsed,
@@ -136,39 +110,33 @@ export async function runDecision<T>(
       };
       method = "ai";
     } else {
-      scoring = config.scoreDeterministic(state, entry);
+      scoring = scoreHeroDeterministic(state, matrix);
       method = "deterministic";
       ai_error = "AI response could not be parsed";
     }
   } else {
-    scoring = config.scoreDeterministic(state, entry);
+    scoring = scoreHeroDeterministic(state, matrix);
     method = "deterministic";
     ai_error = "AI returned null (fetch failed or invalid response)";
   }
 
-  // Apply rules
-  const { scores: filteredScores, rules_applied } = applyRules(
-    scoring.scores,
-    config.rules,
-    state,
-    device
+  const { scores: filteredScores, rules_applied } = applyHeroGuardrails(
+    scoring.scores, state, device
   );
   scoring = { ...scoring, scores: filteredScores };
 
-  // Assemble
   let result;
   try {
-    result = config.assemble(scoring.scores);
+    result = assembleHero(scoring.scores);
   } catch (err) {
-    console.warn(`[decision:${config.section_id}] Assembly failed, using fallback:`, err);
-    const fallback = config.scoreDeterministic(state, entry);
-    result = config.assemble(fallback.scores);
+    console.warn("[engine] Hero assembly failed, using fallback:", err);
+    const fallback = scoreHeroDeterministic(state, matrix);
+    result = assembleHero(fallback.scores);
     method = "fallback";
     scoring = fallback;
   }
 
   return {
-    section_id: config.section_id,
     content: result.content,
     selected_ids: result.selected_ids,
     state_vector: state,
@@ -178,7 +146,76 @@ export async function runDecision<T>(
     rejected_ids: result.rejected_ids,
     rules_applied,
     ai_error,
-    snapshot_id: snapshotId ?? generateSnapshotId(),
+    snapshot_id: snapshotId,
     timestamp: Date.now(),
   };
+}
+
+// ─── Section Sequence (AI) ──────────────────────────────────
+
+async function runSectionsAI(
+  state: UserStateVector,
+  stateKey: string,
+  ctx: VisitorContext,
+  device: DeviceContext,
+  baseSections: SectionSequenceDecision
+): Promise<SectionSequenceDecision> {
+  const prompt = buildSectionAIPrompt(state, stateKey, baseSections.section_ids, ctx, device);
+  const aiResult = await openaiChat<unknown>([
+    { role: "system", content: SECTION_AI_SYSTEM_MESSAGE },
+    { role: "user", content: prompt },
+  ]);
+
+  if (aiResult) {
+    const parsed = parseSectionAIResponse(aiResult.data);
+    if (parsed) {
+      return applySectionAIScores(baseSections, parsed);
+    }
+  }
+
+  return baseSections;
+}
+
+// ─── Public API ─────────────────────────────────────────────
+
+/**
+ * Synchronous, 0ms — instant first render.
+ * Deterministic hero + deterministic section sequence.
+ */
+export function runPageDecisionFast(
+  ctx: VisitorContext,
+  device: DeviceContext
+): PageDecision {
+  const state = deriveUserState(ctx, device);
+  const stateKey = deriveStateKey(state);
+  const snapshotId = generateSnapshotId();
+
+  const hero = runHeroDeterministic(state, stateKey, device, snapshotId);
+  const sections = selectSectionsDeterministic(state, ctx.isReturning, snapshotId);
+
+  return { hero, sections, snapshot_id: snapshotId, timestamp: Date.now() };
+}
+
+/**
+ * Async — tries AI scoring for both hero and sections.
+ * Falls back to deterministic if AI fails.
+ */
+export async function runPageDecision(
+  ctx: VisitorContext,
+  device: DeviceContext,
+  snapshotId?: string
+): Promise<PageDecision> {
+  const state = deriveUserState(ctx, device);
+  const stateKey = deriveStateKey(state);
+  const sid = snapshotId ?? generateSnapshotId();
+
+  // Run hero AI and section base in parallel
+  const baseSections = selectSectionsDeterministic(state, ctx.isReturning, sid);
+
+  const [hero, sections] = await Promise.all([
+    runHeroAI(state, stateKey, ctx, device, sid),
+    runSectionsAI(state, stateKey, ctx, device, baseSections),
+  ]);
+
+  return { hero, sections, snapshot_id: sid, timestamp: Date.now() };
 }
