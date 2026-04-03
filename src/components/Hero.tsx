@@ -19,6 +19,7 @@ import {
   setTrackContext,
   observeScrollBelowHero,
   markHeroMount,
+  detectDevice,
   NW_EVENTS,
 } from "@/lib/analytics";
 
@@ -238,10 +239,10 @@ export function Hero({ forceVariant }: HeroProps) {
               <li><span className="text-neutral-300">weather:</span> {ctx.weather.condition ?? "loading…"}</li>
               <li><span className="text-neutral-300">temp:</span> {ctx.weather.temp !== null ? `${ctx.weather.temp}°C` : "loading…"}</li>
               <li><span className="text-neutral-300">city:</span> {ctx.weather.city ?? "loading…"}</li>
-              <li><span className="text-neutral-300">medium:</span> {ctx.acquisition.medium}</li>
+              <li><span className="text-neutral-300">device:</span> {detectDevice().device_type} ({detectDevice().breakpoint_bucket})</li>
+              <li><span className="text-neutral-300">viewport:</span> {detectDevice().viewport_w}×{detectDevice().viewport_h}</li>
               <li><span className="text-neutral-300">referrer:</span> {ctx.acquisition.referrer_group}</li>
               <li><span className="text-neutral-300">utm_source:</span> {ctx.acquisition.utm_source ?? "—"}</li>
-              <li><span className="text-neutral-300">utm_medium:</span> {ctx.acquisition.utm_medium ?? "—"}</li>
               <li><span className="text-neutral-300">utm_campaign:</span> {ctx.acquisition.utm_campaign ?? "—"}</li>
             </ul>
             <div className="my-2 h-px bg-neutral-100" />
