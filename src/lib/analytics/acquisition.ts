@@ -10,6 +10,8 @@ export interface AcquisitionContext {
   utm_campaign: string | null;
   referrer: string | null;
   referrer_group: ReferrerGroup;
+  /** Resolved medium — utm_medium if set, otherwise derived from referrer */
+  medium: string;
 }
 
 const SOCIAL_DOMAINS = ["linkedin.com", "twitter.com", "x.com", "facebook.com", "instagram.com", "threads.net", "reddit.com", "youtube.com"];
@@ -39,9 +41,14 @@ function normalizeReferrerGroup(referrer: string | null, utmMedium: string | nul
   return "unknown";
 }
 
+function resolveMedium(utmMedium: string | null, referrerGroup: ReferrerGroup): string {
+  if (utmMedium) return utmMedium;
+  return referrerGroup;
+}
+
 export function detectAcquisition(): AcquisitionContext {
   if (typeof window === "undefined") {
-    return { utm_source: null, utm_medium: null, utm_campaign: null, referrer: null, referrer_group: "direct" };
+    return { utm_source: null, utm_medium: null, utm_campaign: null, referrer: null, referrer_group: "direct", medium: "direct" };
   }
 
   const params = new URLSearchParams(window.location.search);
@@ -49,12 +56,14 @@ export function detectAcquisition(): AcquisitionContext {
   const utm_medium = params.get("utm_medium");
   const utm_campaign = params.get("utm_campaign");
   const referrer = document.referrer || null;
+  const referrer_group = normalizeReferrerGroup(referrer, utm_medium);
 
   return {
     utm_source,
     utm_medium,
     utm_campaign,
     referrer,
-    referrer_group: normalizeReferrerGroup(referrer, utm_medium),
+    referrer_group,
+    medium: resolveMedium(utm_medium, referrer_group),
   };
 }

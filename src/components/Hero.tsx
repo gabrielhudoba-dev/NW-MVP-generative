@@ -93,6 +93,7 @@ export function Hero({ forceVariant }: HeroProps) {
       language: detected.language,
       country: detected.country,
       // acquisition
+      medium: detected.acquisition.medium,
       utm_source: detected.acquisition.utm_source,
       utm_medium: detected.acquisition.utm_medium,
       utm_campaign: detected.acquisition.utm_campaign,
@@ -237,6 +238,7 @@ export function Hero({ forceVariant }: HeroProps) {
               <li><span className="text-neutral-300">weather:</span> {ctx.weather.condition ?? "loading…"}</li>
               <li><span className="text-neutral-300">temp:</span> {ctx.weather.temp !== null ? `${ctx.weather.temp}°C` : "loading…"}</li>
               <li><span className="text-neutral-300">city:</span> {ctx.weather.city ?? "loading…"}</li>
+              <li><span className="text-neutral-300">medium:</span> {ctx.acquisition.medium}</li>
               <li><span className="text-neutral-300">referrer:</span> {ctx.acquisition.referrer_group}</li>
               <li><span className="text-neutral-300">utm_source:</span> {ctx.acquisition.utm_source ?? "—"}</li>
               <li><span className="text-neutral-300">utm_medium:</span> {ctx.acquisition.utm_medium ?? "—"}</li>
