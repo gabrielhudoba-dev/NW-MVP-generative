@@ -23,7 +23,7 @@ export function assembleHero(scores: {
   description_scores: SlotScore[];
   cta_scores: SlotScore[];
   proof_scores: SlotScore[];
-}): { assembled: AssembledHero; selected_ids: Record<string, string>; rejected_ids: string[] } {
+}): { assembled: AssembledHero; selected_ids: { headline_id: string; description_id: string; cta_id: string; proof_id: string }; rejected_ids: string[] } {
   const bestHeadline = pickBest(scores.headline_scores);
   const bestDescription = pickBest(scores.description_scores);
   const bestCta = pickBest(scores.cta_scores);
