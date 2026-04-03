@@ -55,11 +55,21 @@ interface StoredEvent {
   [key: string]: unknown;
 }
 
+function useDebugMode() {
+  const [debug, setDebug] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setDebug(params.has("debug"));
+  }, []);
+  return debug;
+}
+
 export function Hero({ forceVariant }: HeroProps) {
   const heroRef = useRef<HTMLElement>(null);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [ctx, setCtx] = useState<VisitorContext | null>(null);
   const [events, setEvents] = useState<StoredEvent[]>([]);
+  const showDebug = useDebugMode();
 
   // Initialize context + set shared tracking properties
   useEffect(() => {
@@ -152,9 +162,9 @@ export function Hero({ forceVariant }: HeroProps) {
     return observeScrollBelowHero(el);
   }, [ctx]);
 
-  // Poll sessionStorage for event log (dev only)
+  // Poll sessionStorage for event log
   useEffect(() => {
-    if (process.env.NODE_ENV !== "development") return;
+    if (!showDebug) return;
     const read = () => {
       try {
         const raw = sessionStorage.getItem("nw_events");
@@ -210,8 +220,8 @@ export function Hero({ forceVariant }: HeroProps) {
           </span>
         </div>
 
-        {/* Generative context panel — dev only */}
-        {process.env.NODE_ENV === "development" && (
+        {/* Generative context panel — visible with ?debug in URL */}
+        {showDebug && (
           <div className="absolute right-6 top-8 z-10 rounded-lg border border-neutral-200 bg-white/95 px-4 py-3 text-xs text-neutral-500 backdrop-blur-sm sm:right-12 lg:right-24">
             <p className="mb-2 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
               Generative context
