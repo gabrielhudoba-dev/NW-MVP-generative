@@ -235,7 +235,6 @@ export function Hero({ forceVariant }: HeroProps) {
               <li><span className="text-neutral-300">timeOfDay:</span> {ctx.timeOfDay}</li>
               <li><span className="text-neutral-300">returning:</span> {String(ctx.isReturning)}</li>
               <li><span className="text-neutral-300">locale:</span> {ctx.locale}</li>
-              <li><span className="text-neutral-300">country:</span> {ctx.country ?? "—"}</li>
               <li><span className="text-neutral-300">weather:</span> {ctx.weather.condition ?? "loading…"}</li>
               <li><span className="text-neutral-300">temp:</span> {ctx.weather.temp !== null ? `${ctx.weather.temp}°C` : "loading…"}</li>
               <li><span className="text-neutral-300">city:</span> {ctx.weather.city ?? "loading…"}</li>
