@@ -12,12 +12,14 @@ import {
   setTrackContext,
   observeScrollBelowHero,
   markHeroMount,
+  getTimeSinceHeroMount,
   detectDevice,
   NW_EVENTS,
 } from "@/lib/analytics";
-import { selectHero, reselectHeroFast } from "@/lib/decision/select-hero";
-import type { HeroDecision } from "@/lib/hero/types";
+import { runDecision, runDecisionFast } from "@/lib/decision/engine";
+import { heroConfig, type HeroDecision } from "@/lib/sections/hero";
 import { HeroContent } from "./HeroContent";
+import { RewriteText } from "./RewriteText";
 import { BookingModal } from "./BookingModal";
 
 const ALL_EVENT_NAMES = Object.values(NW_EVENTS);
@@ -74,7 +76,7 @@ export function Hero() {
     }
 
     // ── Step 1: INSTANT deterministic render ──
-    const instant = reselectHeroFast(detected, device);
+    const instant = runDecisionFast(heroConfig, detected, device);
     activeSnapshotRef.current = instant.snapshot_id;
     setDecision(instant);
 
@@ -102,20 +104,20 @@ export function Hero() {
       medium: detected.acquisition.medium,
       utm_source: detected.acquisition.utm_source,
       referrer_group: detected.acquisition.referrer_group,
-      headline_id: instant.selected_ids.headline_id,
-      description_id: instant.selected_ids.description_id,
-      cta_id: instant.selected_ids.cta_id,
-      proof_id: instant.selected_ids.proof_id,
+      headline_id: instant.selected_ids.headline,
+      description_id: instant.selected_ids.description,
+      cta_id: instant.selected_ids.cta,
+      proof_id: instant.selected_ids.proof,
       state_key: instant.state_key,
       snapshot_id: instant.snapshot_id,
       selection_method: instant.selection_method,
-      cta_label: instant.assembled.cta.label,
+      cta_label: instant.content.cta.label,
     });
 
     // ── Step 2: Async AI upgrade — replaces deterministic when ready ──
     const currentSnapshotId = instant.snapshot_id;
 
-    selectHero(detected, device, currentSnapshotId).then((aiDecision) => {
+    runDecision(heroConfig, detected, device, currentSnapshotId).then((aiDecision) => {
       if (cancelled) return;
 
       // Stale response guard: only apply if this snapshot is still active
@@ -126,12 +128,12 @@ export function Hero() {
 
         // Update tracking context with AI-selected IDs
         setTrackContext({
-          headline_id: aiDecision.selected_ids.headline_id,
-          description_id: aiDecision.selected_ids.description_id,
-          cta_id: aiDecision.selected_ids.cta_id,
-          proof_id: aiDecision.selected_ids.proof_id,
+          headline_id: aiDecision.selected_ids.headline,
+          description_id: aiDecision.selected_ids.description,
+          cta_id: aiDecision.selected_ids.cta,
+          proof_id: aiDecision.selected_ids.proof,
           selection_method: "ai",
-          cta_label: aiDecision.assembled.cta.label,
+          cta_label: aiDecision.content.cta.label,
           snapshot_id: aiDecision.snapshot_id,
         });
 
@@ -195,16 +197,27 @@ export function Hero() {
     return () => clearInterval(id);
   }, [showDebug]);
 
-  const handleBookingOpen = useCallback(() => {
+  const handleCtaClick = useCallback(() => {
+    if (!decision) return;
+    const elapsed = getTimeSinceHeroMount();
+    track(NW_EVENTS.PRIMARY_CTA_CLICKED, {
+      cta_label: decision.content.cta.label,
+      time_to_primary_cta_click_ms: elapsed,
+    });
+    if (elapsed !== null) {
+      track(NW_EVENTS.TIME_TO_CTA_RECORDED, {
+        time_to_primary_cta_click_ms: elapsed,
+      });
+    }
     setBookingOpen(true);
-  }, []);
+  }, [decision]);
 
   // No skeleton — always render immediately
   if (!decision || !ctx) {
     return null;
   }
 
-  const { assembled } = decision;
+  const { content } = decision;
 
   return (
     <>
@@ -217,16 +230,26 @@ export function Hero() {
         data-state-key={decision.state_key}
         data-method={decision.selection_method}
       >
-        {/* Brand mark */}
-        <div className="absolute left-6 top-8 sm:left-12 lg:left-24">
+        {/* Top bar: brand left, CTA right */}
+        <div className="absolute left-6 right-6 top-8 flex items-center justify-between sm:left-12 sm:right-12 lg:left-24 lg:right-24">
           <span className="text-sm font-semibold tracking-tight text-neutral-900">
             Native Works
           </span>
+          <button
+            onClick={handleCtaClick}
+            className="
+              rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white
+              transition-all hover:bg-neutral-800 active:bg-neutral-700
+              active:scale-[0.98]
+            "
+          >
+            <RewriteText text={content.cta.label} />
+          </button>
         </div>
 
         {/* Debug panel */}
         {showDebug && (
-          <div className="absolute right-6 top-8 z-10 max-h-[90vh] overflow-y-auto rounded-lg border border-neutral-200 bg-white/95 px-4 py-3 text-xs text-neutral-500 backdrop-blur-sm sm:right-12 lg:right-24">
+          <div className="absolute right-6 top-20 z-10 max-h-[80vh] overflow-y-auto rounded-lg border border-neutral-200 bg-white/95 px-4 py-3 text-xs text-neutral-500 backdrop-blur-sm sm:right-12 lg:right-24">
             <p
               className="mb-2 font-medium uppercase tracking-widest text-neutral-300"
               style={{ fontSize: "10px" }}
@@ -338,21 +361,11 @@ export function Hero() {
               Selected
             </p>
             <ul className="space-y-0.5">
-              <li>
-                <span className="text-neutral-300">headline:</span>{" "}
-                {decision.selected_ids.headline_id}
-              </li>
-              <li>
-                <span className="text-neutral-300">desc:</span>{" "}
-                {decision.selected_ids.description_id}
-              </li>
-              <li>
-                <span className="text-neutral-300">cta:</span> {decision.selected_ids.cta_id}
-              </li>
-              <li>
-                <span className="text-neutral-300">proof:</span>{" "}
-                {decision.selected_ids.proof_id}
-              </li>
+              {Object.entries(decision.selected_ids).map(([slot, id]) => (
+                <li key={slot}>
+                  <span className="text-neutral-300">{slot}:</span> {id}
+                </li>
+              ))}
             </ul>
 
             {/* Scoring details */}
@@ -366,24 +379,20 @@ export function Hero() {
                   Scoring ({decision.scoring.model} · {decision.scoring.latency_ms}ms)
                 </p>
                 <ul className="space-y-0.5">
-                  {[
-                    ...decision.scoring.headline_scores.map((s) => ({ ...s, slot: "h" })),
-                    ...decision.scoring.description_scores.map((s) => ({ ...s, slot: "d" })),
-                    ...decision.scoring.cta_scores.map((s) => ({ ...s, slot: "c" })),
-                    ...decision.scoring.proof_scores.map((s) => ({ ...s, slot: "p" })),
-                  ]
+                  {Object.entries(decision.scoring.scores)
+                    .flatMap(([, slotScores]) => slotScores)
                     .sort((a, b) => b.score - a.score)
                     .map((s) => {
                       const isSelected = Object.values(decision.selected_ids).includes(s.id);
                       return (
-                        <li key={`${s.slot}_${s.id}`} className="flex items-center gap-1">
+                        <li key={s.id} className="flex items-center gap-1">
                           <span className={isSelected ? "text-green-400" : "text-neutral-300"}>
                             {isSelected ? "\u25CF" : "\u25CB"}
                           </span>
                           <span
                             className={isSelected ? "text-neutral-500" : "text-neutral-300"}
                           >
-                            {s.id.split("_").slice(1).join("_")}
+                            {s.id}
                           </span>
                           <span className="ml-auto">{s.score.toFixed(2)}</span>
                         </li>
@@ -437,14 +446,45 @@ export function Hero() {
           </div>
         )}
 
-        {/* Hero content — rendered from assembled decision */}
+        {/* Hero content — headline + description */}
         <HeroContent
-          headline={assembled.headline.text}
-          description={assembled.description.text}
-          ctaLabel={assembled.cta.label}
-          proof={assembled.proof.type !== "none" ? assembled.proof.content : null}
-          onBookingOpen={handleBookingOpen}
+          headline={content.headline.text}
+          description={content.description.text}
         />
+
+        {/* Proof widget — bottom right */}
+        {content.proof.type !== "none" && (
+          <div className="absolute bottom-8 right-6 sm:right-12 lg:right-24">
+            {content.proof.type === "showreel" ? (
+              <div className="group relative h-20 w-36 cursor-pointer overflow-hidden rounded-xl bg-neutral-100 transition-all duration-500 ease-out hover:h-44 hover:w-72 sm:h-24 sm:w-44 sm:hover:h-52 sm:hover:w-80">
+                <div className="flex h-full w-full items-center justify-center">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80 shadow-sm transition-transform duration-300 group-hover:scale-110">
+                    <svg className="ml-0.5 h-4 w-4 text-neutral-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            ) : content.proof.type === "kpi" ? (
+              <div className="flex flex-col items-end gap-1.5">
+                {content.proof.content.split(" | ").map((stat, i) => (
+                  <RewriteText
+                    key={i}
+                    text={stat}
+                    as="p"
+                    className="text-right text-sm font-medium tabular-nums text-neutral-400"
+                  />
+                ))}
+              </div>
+            ) : (
+              <RewriteText
+                text={content.proof.content}
+                as="p"
+                className="max-w-xs text-right text-sm leading-relaxed text-neutral-400"
+              />
+            )}
+          </div>
+        )}
       </section>
 
       <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} variant="A" />

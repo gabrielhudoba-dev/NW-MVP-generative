@@ -2,9 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 
-const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-const STEP_MS = 18;
-const SCRAMBLE_ROUNDS = 3;
+const CHAR_MS = 22;
 
 interface RewriteTextProps {
   text: string;
@@ -14,61 +12,38 @@ interface RewriteTextProps {
 }
 
 /**
- * Displays text with a scramble-decode animation when the value changes.
- * First render is instant — animation only triggers on subsequent changes.
+ * Typewriter effect — when text changes, types out the new value
+ * character by character. First render is instant.
  */
 export function RewriteText({ text, className, as: Tag = "span", children }: RewriteTextProps) {
   const [displayed, setDisplayed] = useState(text);
   const prevRef = useRef(text);
-  const rafRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (text === prevRef.current) return;
     prevRef.current = text;
 
-    // Cancel any running animation
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (timerRef.current) clearTimeout(timerRef.current);
 
-    const target = text;
-    const maxLen = Math.max(displayed.length, target.length);
-    let resolved = 0;
-    let tick = 0;
+    let i = 0;
+    setDisplayed("");
 
-    function step() {
-      tick++;
-      const charsPerStep = Math.max(1, Math.floor(maxLen / 20));
-
-      if (tick % SCRAMBLE_ROUNDS === 0) {
-        resolved = Math.min(resolved + charsPerStep, maxLen);
-      }
-
-      let out = "";
-      for (let i = 0; i < maxLen; i++) {
-        if (i < resolved) {
-          out += target[i] ?? "";
-        } else if (i < target.length) {
-          out += target[i] === " " ? " " : CHARS[Math.floor(Math.random() * CHARS.length)];
-        }
-      }
-
-      setDisplayed(out);
-
-      if (resolved < maxLen) {
-        rafRef.current = requestAnimationFrame(() => {
-          setTimeout(step, STEP_MS);
-        });
+    function tick() {
+      i++;
+      setDisplayed(text.slice(0, i));
+      if (i < text.length) {
+        timerRef.current = setTimeout(tick, CHAR_MS);
       } else {
-        setDisplayed(target);
-        rafRef.current = null;
+        timerRef.current = null;
       }
     }
 
-    step();
+    timerRef.current = setTimeout(tick, CHAR_MS);
 
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
 
   if (children) {

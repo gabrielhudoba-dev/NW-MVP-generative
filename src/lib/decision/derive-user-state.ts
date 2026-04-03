@@ -1,4 +1,4 @@
-import type { UserStateVector } from "../hero/types";
+import type { UserStateVector } from "./types";
 import type { VisitorContext } from "../personalization";
 import type { DeviceContext } from "../analytics/device";
 
@@ -115,7 +115,9 @@ export function deriveStateKey(state: UserStateVector): string {
     state.intent_score >= 0.6 ? "ready" :
     state.intent_score >= 0.35 ? "evaluating" : "exploring";
 
-  const trust = state.trust_score >= 0.45 ? "hightrust" : "lowtrust";
+  const trust =
+    state.trust_score >= 0.5 ? "hightrust" :
+    state.trust_score >= 0.35 ? "medtrust" : "lowtrust";
   const energy = state.energy_score >= 0.45 ? "highenergy" : "lowenergy";
 
   return `${intent}_${trust}_${energy}`;
