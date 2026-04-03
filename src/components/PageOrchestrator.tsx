@@ -254,14 +254,11 @@ export function PageOrchestrator() {
       )}
 
       {personaEnabled && (
-        <>
-          <div className="h-20" /> {/* Bottom spacer for fixed switcher */}
-          <PersonaSwitcher
-            activeId={personaId}
-            decision={decision}
-            onChange={handlePersonaChange}
-          />
-        </>
+        <PersonaSwitcher
+          activeId={personaId}
+          decision={decision}
+          onChange={handlePersonaChange}
+        />
       )}
     </>
   );

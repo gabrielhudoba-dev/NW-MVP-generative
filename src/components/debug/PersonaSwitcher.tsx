@@ -10,7 +10,7 @@ interface PersonaSwitcherProps {
 }
 
 /**
- * Persona switcher — floating bar for design preview.
+ * Persona switcher — right-side panel for design preview.
  *
  * Shown when ?persona is in the URL.
  * Lets designers flip between visitor profiles to see
@@ -20,107 +20,112 @@ export function PersonaSwitcher({ activeId, decision, onChange }: PersonaSwitche
   const active = PERSONAS.find((p) => p.id === activeId) ?? null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-neutral-200 bg-white/95 backdrop-blur-sm">
-      {/* Tabs */}
-      <div className="flex items-center gap-0 overflow-x-auto border-b border-neutral-100">
-        {/* Live mode */}
+    <div className="fixed right-4 top-20 z-50 w-56 overflow-y-auto rounded-lg border border-neutral-200 bg-white/95 text-xs shadow-lg backdrop-blur-sm" style={{ maxHeight: "calc(100vh - 6rem)" }}>
+      {/* Persona tabs */}
+      <div className="flex flex-wrap gap-0 border-b border-neutral-100">
         <button
           onClick={() => onChange(null)}
           className={`
-            shrink-0 px-4 py-2.5 text-xs font-medium transition-colors
+            px-3 py-2 text-[11px] font-medium transition-colors
             ${activeId === null
-              ? "border-b-2 border-neutral-900 text-neutral-900"
+              ? "bg-neutral-900 text-white"
               : "text-neutral-400 hover:text-neutral-600"
             }
           `}
         >
           Live
         </button>
-
         {PERSONAS.map((p) => (
           <button
             key={p.id}
             onClick={() => onChange(p)}
             className={`
-              shrink-0 px-4 py-2.5 text-xs font-medium transition-colors
+              px-3 py-2 text-[11px] font-medium transition-colors
               ${activeId === p.id
-                ? "border-b-2 border-neutral-900 text-neutral-900"
+                ? "bg-neutral-900 text-white"
                 : "text-neutral-400 hover:text-neutral-600"
               }
             `}
           >
-            <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full" style={{
-              backgroundColor: activeId === p.id ? "#171717" : "#d4d4d4",
-            }} />
             {p.id}
           </button>
         ))}
       </div>
 
-      {/* Detail bar */}
-      <div className="flex items-center gap-6 px-4 py-2">
-        {active ? (
-          <>
-            <div className="shrink-0">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-neutral-300">
-                Persona {active.id}
-              </p>
-              <p className="text-xs font-medium text-neutral-700">{active.label}</p>
-            </div>
-
-            <div className="h-6 w-px bg-neutral-100" />
-
-            <InfoChip label="device" value={active.device.device_type} />
-            <InfoChip label="time" value={active.ctx.timeOfDay} />
-            <InfoChip label="referrer" value={active.ctx.acquisition.referrer_group} />
-            <InfoChip label="returning" value={active.ctx.isReturning ? "yes" : "no"} />
-            {active.ctx.isWeekend && <InfoChip label="weekend" value="yes" />}
-            {active.ctx.acquisition.utm_medium && (
-              <InfoChip label="utm_medium" value={active.ctx.acquisition.utm_medium} />
-            )}
-
-            <div className="h-6 w-px bg-neutral-100" />
-
-            {decision && (
-              <>
-                <InfoChip label="state" value={decision.hero.state_key} highlight />
-                <InfoChip label="headline" value={shortId(decision.hero.selected_ids.headline)} />
-                <InfoChip label="desc" value={shortId(decision.hero.selected_ids.description)} />
-                <InfoChip label="cta" value={shortId(decision.hero.selected_ids.cta)} />
-                <InfoChip label="proof" value={shortId(decision.hero.selected_ids.proof)} />
-                <InfoChip label="method" value={decision.hero.selection_method} />
-                {decision.hero.rules_applied.length > 0 && (
-                  <InfoChip
-                    label="guardrails"
-                    value={String(decision.hero.rules_applied.length)}
-                    highlight
-                  />
-                )}
-
-                <div className="h-6 w-px bg-neutral-100" />
-
-                <InfoChip
-                  label="sections"
-                  value={decision.sections.section_ids.join(" \u2192 ")}
-                />
-              </>
-            )}
-          </>
-        ) : (
-          <p className="text-xs text-neutral-400">
-            Live mode — using real visitor context. Click a persona to preview.
+      {active ? (
+        <div className="px-3 py-2.5">
+          {/* Persona name */}
+          <p className="mb-3 text-[11px] font-semibold text-neutral-900">
+            {active.label}
           </p>
-        )}
-      </div>
+
+          {/* Context */}
+          <SectionLabel>Context</SectionLabel>
+          <Row label="device" value={active.device.device_type} />
+          <Row label="time" value={active.ctx.timeOfDay} />
+          <Row label="referrer" value={active.ctx.acquisition.referrer_group} />
+          <Row label="returning" value={active.ctx.isReturning ? "yes" : "no"} />
+          {active.ctx.isWeekend && <Row label="weekend" value="yes" />}
+          {active.ctx.acquisition.utm_medium && (
+            <Row label="utm_medium" value={active.ctx.acquisition.utm_medium} />
+          )}
+          {active.ctx.acquisition.utm_source && (
+            <Row label="utm_source" value={active.ctx.acquisition.utm_source} />
+          )}
+
+          {decision && (
+            <>
+              {/* State */}
+              <SectionLabel>State</SectionLabel>
+              <Row label="key" value={decision.hero.state_key} highlight />
+              <Row label="method" value={decision.hero.selection_method} />
+              {decision.hero.rules_applied.length > 0 && (
+                <Row
+                  label="guardrails"
+                  value={decision.hero.rules_applied.join(", ")}
+                  highlight
+                />
+              )}
+
+              {/* Hero */}
+              <SectionLabel>Hero</SectionLabel>
+              <Row label="headline" value={shortId(decision.hero.selected_ids.headline)} />
+              <Row label="desc" value={shortId(decision.hero.selected_ids.description)} />
+              <Row label="cta" value={shortId(decision.hero.selected_ids.cta)} />
+              <Row label="proof" value={shortId(decision.hero.selected_ids.proof)} />
+
+              {/* Sections */}
+              <SectionLabel>Sections</SectionLabel>
+              {decision.sections.section_ids.map((id, i) => (
+                <Row key={id} label={String(i + 1)} value={id} />
+              ))}
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="px-3 py-3">
+          <p className="text-[11px] leading-relaxed text-neutral-400">
+            Live mode — real visitor context. Click a persona to preview.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
 
-function InfoChip({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="shrink-0">
-      <span className="text-[10px] uppercase tracking-wider text-neutral-300">{label} </span>
-      <span className={`text-[11px] font-medium tabular-nums ${
+    <p className="mb-1 mt-3 text-[10px] font-medium uppercase tracking-widest text-neutral-300 first:mt-0">
+      {children}
+    </p>
+  );
+}
+
+function Row({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="flex justify-between gap-2 py-[2px]">
+      <span className="shrink-0 text-[11px] text-neutral-400">{label}</span>
+      <span className={`text-right text-[11px] font-medium ${
         highlight ? "text-green-600" : "text-neutral-600"
       }`}>
         {value}
