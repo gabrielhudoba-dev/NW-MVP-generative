@@ -14,6 +14,7 @@ import {
   markHeroMount,
   detectDevice,
   NW_EVENTS,
+  type DeviceContext,
 } from "@/lib/analytics";
 import { selectHero, reselectHeroFast } from "@/lib/decision/select-hero";
 import type { HeroDecision } from "@/lib/hero/types";
@@ -27,6 +28,13 @@ interface StoredEvent {
   timestamp: number;
   status?: "sent" | "local";
   [key: string]: unknown;
+}
+
+/** Tracks which methods have contributed to the current decision */
+interface DecisionHistory {
+  initial: "deterministic";
+  current: "deterministic" | "ai";
+  upgrades: { method: string; timestamp: number }[];
 }
 
 function useDebugMode() {
@@ -43,106 +51,137 @@ export function Hero() {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [ctx, setCtx] = useState<VisitorContext | null>(null);
   const [decision, setDecision] = useState<HeroDecision | null>(null);
+  const [history, setHistory] = useState<DecisionHistory | null>(null);
   const [events, setEvents] = useState<StoredEvent[]>([]);
   const showDebug = useDebugMode();
 
-  // ── Decision pipeline ──
+  // Keep refs for async callbacks
+  const ctxRef = useRef<VisitorContext | null>(null);
+  const deviceRef = useRef<DeviceContext | null>(null);
+
+  // ── Decision pipeline — instant deterministic, then async AI upgrade ──
   useEffect(() => {
     let cancelled = false;
 
-    async function run() {
-      const detected = detectVisitorContext();
-      const device = detectDevice();
-      setCtx(detected);
+    const detected = detectVisitorContext();
+    const device = detectDevice();
+    ctxRef.current = detected;
+    deviceRef.current = device;
+    setCtx(detected);
 
-      // Set initial shared tracking context
-      setTrackContext({
-        visitor_type: detected.isReturning ? "returning" : "new",
-        time_bucket: detected.timeOfDay,
-        locale: detected.locale,
-        language: detected.language,
-        medium: detected.acquisition.medium,
-        utm_source: detected.acquisition.utm_source,
-        referrer_group: detected.acquisition.referrer_group,
-      });
+    // Set initial shared tracking context
+    setTrackContext({
+      visitor_type: detected.isReturning ? "returning" : "new",
+      time_bucket: detected.timeOfDay,
+      locale: detected.locale,
+      language: detected.language,
+      medium: detected.acquisition.medium,
+      utm_source: detected.acquisition.utm_source,
+      referrer_group: detected.acquisition.referrer_group,
+    });
 
-      markHeroMount();
+    markHeroMount();
+    trackOnce(NW_EVENTS.HERO_SEEN);
 
-      // Fire initial impression events
-      trackOnce(NW_EVENTS.HERO_SEEN);
-
-      if (detected.isReturning) {
-        trackOnce(NW_EVENTS.RETURN_VISITOR_DETECTED);
-      }
-
-      // Run decision pipeline
-      const heroDecision = await selectHero(detected, device);
-      if (cancelled) return;
-
-      setDecision(heroDecision);
-
-      // Track decision pipeline events
-      track(NW_EVENTS.HERO_STATE_DERIVED, {
-        state_key: heroDecision.state_key,
-        ...heroDecision.state_vector,
-      });
-
-      track(NW_EVENTS.HERO_AI_SCORING_COMPLETED, {
-        selection_method: heroDecision.selection_method,
-        scoring_model: heroDecision.scoring?.model,
-        scoring_latency_ms: heroDecision.scoring?.latency_ms,
-      });
-
-      track(NW_EVENTS.HERO_VARIANT_SELECTED, {
-        ...heroDecision.selected_ids,
-        state_key: heroDecision.state_key,
-        selection_method: heroDecision.selection_method,
-        rejected_ids: heroDecision.rejected_ids,
-      });
-
-      trackOnce(NW_EVENTS.HERO_VARIANT_SEEN);
-
-      // Enrich shared context with decision data
-      setTrackContext({
-        visitor_type: detected.isReturning ? "returning" : "new",
-        time_bucket: detected.timeOfDay,
-        locale: detected.locale,
-        language: detected.language,
-        medium: detected.acquisition.medium,
-        utm_source: detected.acquisition.utm_source,
-        referrer_group: detected.acquisition.referrer_group,
-        // Decision data
-        headline_id: heroDecision.selected_ids.headline_id,
-        description_id: heroDecision.selected_ids.description_id,
-        cta_id: heroDecision.selected_ids.cta_id,
-        proof_id: heroDecision.selected_ids.proof_id,
-        state_key: heroDecision.state_key,
-        selection_method: heroDecision.selection_method,
-        cta_label: heroDecision.assembled.cta.label,
-      });
-
-      // Fetch weather async — re-score when it arrives
-      detectWeather().then((weather) => {
-        if (cancelled) return;
-        const updatedCtx = { ...detected, weather };
-        setCtx(updatedCtx);
-        // Re-score with weather data (fast deterministic)
-        const updated = reselectHeroFast(updatedCtx, device);
-        if (!cancelled) setDecision(updated);
-      });
-
-      // Bounce detection
-      const bounceTimer = setTimeout(() => {
-        trackOnce(NW_EVENTS.SESSION_BOUNCED_FROM_HERO);
-      }, 10_000);
-
-      const cancelBounce = () => clearTimeout(bounceTimer);
-      window.addEventListener("scroll", cancelBounce, { once: true });
-      window.addEventListener("click", cancelBounce, { once: true });
+    if (detected.isReturning) {
+      trackOnce(NW_EVENTS.RETURN_VISITOR_DETECTED);
     }
 
-    run();
-    return () => { cancelled = true; };
+    // ── Step 1: INSTANT deterministic render ──
+    const instant = reselectHeroFast(detected, device);
+    setDecision(instant);
+    setHistory({
+      initial: "deterministic",
+      current: "deterministic",
+      upgrades: [{ method: "deterministic", timestamp: Date.now() }],
+    });
+
+    track(NW_EVENTS.HERO_STATE_DERIVED, {
+      state_key: instant.state_key,
+      ...instant.state_vector,
+    });
+
+    track(NW_EVENTS.HERO_VARIANT_SELECTED, {
+      ...instant.selected_ids,
+      state_key: instant.state_key,
+      selection_method: "deterministic",
+    });
+
+    trackOnce(NW_EVENTS.HERO_VARIANT_SEEN);
+
+    // ── Step 2: Async AI upgrade ──
+    selectHero(detected, device).then((aiDecision) => {
+      if (cancelled) return;
+      if (aiDecision.selection_method === "ai") {
+        setDecision(aiDecision);
+        setHistory((prev) =>
+          prev
+            ? {
+                ...prev,
+                current: "ai",
+                upgrades: [...prev.upgrades, { method: "ai", timestamp: Date.now() }],
+              }
+            : prev
+        );
+
+        track(NW_EVENTS.HERO_AI_SCORING_COMPLETED, {
+          selection_method: "ai",
+          scoring_model: aiDecision.scoring?.model,
+          scoring_latency_ms: aiDecision.scoring?.latency_ms,
+        });
+      }
+    });
+
+    // ── Step 3: Weather arrives → re-score ──
+    detectWeather().then((weather) => {
+      if (cancelled) return;
+      const updatedCtx = { ...detected, weather };
+      ctxRef.current = updatedCtx;
+      setCtx(updatedCtx);
+
+      const updated = reselectHeroFast(updatedCtx, device);
+      setDecision(updated);
+      setHistory((prev) =>
+        prev
+          ? {
+              ...prev,
+              current: "deterministic",
+              upgrades: [...prev.upgrades, { method: "weather-rescore", timestamp: Date.now() }],
+            }
+          : prev
+      );
+    });
+
+    // Enrich shared context
+    setTrackContext({
+      visitor_type: detected.isReturning ? "returning" : "new",
+      time_bucket: detected.timeOfDay,
+      locale: detected.locale,
+      language: detected.language,
+      medium: detected.acquisition.medium,
+      utm_source: detected.acquisition.utm_source,
+      referrer_group: detected.acquisition.referrer_group,
+      headline_id: instant.selected_ids.headline_id,
+      description_id: instant.selected_ids.description_id,
+      cta_id: instant.selected_ids.cta_id,
+      proof_id: instant.selected_ids.proof_id,
+      state_key: instant.state_key,
+      selection_method: instant.selection_method,
+      cta_label: instant.assembled.cta.label,
+    });
+
+    // Bounce detection
+    const bounceTimer = setTimeout(() => {
+      trackOnce(NW_EVENTS.SESSION_BOUNCED_FROM_HERO);
+    }, 10_000);
+
+    const cancelBounce = () => clearTimeout(bounceTimer);
+    window.addEventListener("scroll", cancelBounce, { once: true });
+    window.addEventListener("click", cancelBounce, { once: true });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Scroll tracking
@@ -159,7 +198,9 @@ export function Hero() {
       try {
         const raw = sessionStorage.getItem("nw_events");
         if (raw) setEvents(JSON.parse(raw));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     };
     read();
     const id = setInterval(read, 500);
@@ -170,24 +211,9 @@ export function Hero() {
     setBookingOpen(true);
   }, []);
 
-  // Skeleton while decision pipeline runs
+  // No skeleton — always render immediately
   if (!decision || !ctx) {
-    return (
-      <section
-        ref={heroRef}
-        className="flex min-h-svh items-center justify-center"
-        aria-hidden="true"
-      >
-        <div className="w-full max-w-2xl animate-pulse space-y-6 px-6">
-          <div className="h-14 w-3/4 rounded-lg bg-neutral-100" />
-          <div className="h-6 w-2/3 rounded bg-neutral-100" />
-          <div className="h-5 w-1/2 rounded bg-neutral-100" />
-          <div className="flex gap-4">
-            <div className="h-12 w-36 rounded-lg bg-neutral-100" />
-          </div>
-        </div>
-      </section>
-    );
+    return null;
   }
 
   const { assembled } = decision;
@@ -213,26 +239,74 @@ export function Hero() {
         {/* Debug panel */}
         {showDebug && (
           <div className="absolute right-6 top-8 z-10 max-h-[90vh] overflow-y-auto rounded-lg border border-neutral-200 bg-white/95 px-4 py-3 text-xs text-neutral-500 backdrop-blur-sm sm:right-12 lg:right-24">
-            <p className="mb-2 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
+            <p
+              className="mb-2 font-medium uppercase tracking-widest text-neutral-300"
+              style={{ fontSize: "10px" }}
+            >
               Generative context
             </p>
             <ul className="space-y-1">
-              <li><span className="text-neutral-300">state:</span> {decision.state_key}</li>
-              <li><span className="text-neutral-300">method:</span> <span className={decision.selection_method === "ai" ? "text-green-500" : "text-amber-500"}>{decision.selection_method}</span></li>
-              <li><span className="text-neutral-300">timeOfDay:</span> {ctx.timeOfDay}</li>
-              <li><span className="text-neutral-300">returning:</span> {String(ctx.isReturning)}</li>
-              <li><span className="text-neutral-300">locale:</span> {ctx.locale}</li>
-              <li><span className="text-neutral-300">weather:</span> {ctx.weather.condition ?? "loading…"}</li>
-              <li><span className="text-neutral-300">temp:</span> {ctx.weather.temp !== null ? `${ctx.weather.temp}°C` : "loading…"}</li>
-              <li><span className="text-neutral-300">city:</span> {ctx.weather.city ?? "loading…"}</li>
-              <li><span className="text-neutral-300">device:</span> {detectDevice().device_type}</li>
-              <li><span className="text-neutral-300">referrer:</span> {ctx.acquisition.referrer_group}</li>
-              <li><span className="text-neutral-300">utm_source:</span> {ctx.acquisition.utm_source ?? "—"}</li>
+              <li>
+                <span className="text-neutral-300">state:</span> {decision.state_key}
+              </li>
+              <li>
+                <span className="text-neutral-300">method:</span>{" "}
+                <span
+                  className={
+                    decision.selection_method === "ai" ? "text-green-500" : "text-amber-500"
+                  }
+                >
+                  {decision.selection_method}
+                </span>
+              </li>
+              {history && (
+                <li>
+                  <span className="text-neutral-300">pipeline:</span>{" "}
+                  <span className="text-neutral-400">
+                    {history.upgrades.map((u) => u.method).join(" → ")}
+                  </span>
+                </li>
+              )}
+              <li>
+                <span className="text-neutral-300">timeOfDay:</span> {ctx.timeOfDay}
+              </li>
+              <li>
+                <span className="text-neutral-300">returning:</span> {String(ctx.isReturning)}
+              </li>
+              <li>
+                <span className="text-neutral-300">locale:</span> {ctx.locale}
+              </li>
+              <li>
+                <span className="text-neutral-300">weather:</span>{" "}
+                {ctx.weather.condition ?? "loading\u2026"}
+              </li>
+              <li>
+                <span className="text-neutral-300">temp:</span>{" "}
+                {ctx.weather.temp !== null ? `${ctx.weather.temp}°C` : "loading\u2026"}
+              </li>
+              <li>
+                <span className="text-neutral-300">city:</span>{" "}
+                {ctx.weather.city ?? "loading\u2026"}
+              </li>
+              <li>
+                <span className="text-neutral-300">device:</span> {detectDevice().device_type}
+              </li>
+              <li>
+                <span className="text-neutral-300">referrer:</span>{" "}
+                {ctx.acquisition.referrer_group}
+              </li>
+              <li>
+                <span className="text-neutral-300">utm_source:</span>{" "}
+                {ctx.acquisition.utm_source ?? "\u2014"}
+              </li>
             </ul>
 
             {/* State vector */}
             <div className="my-2 h-px bg-neutral-100" />
-            <p className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
+            <p
+              className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300"
+              style={{ fontSize: "10px" }}
+            >
               State vector
             </p>
             <ul className="space-y-0.5">
@@ -252,21 +326,38 @@ export function Hero() {
 
             {/* Selected content */}
             <div className="my-2 h-px bg-neutral-100" />
-            <p className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
+            <p
+              className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300"
+              style={{ fontSize: "10px" }}
+            >
               Selected
             </p>
             <ul className="space-y-0.5">
-              <li><span className="text-neutral-300">headline:</span> {decision.selected_ids.headline_id}</li>
-              <li><span className="text-neutral-300">desc:</span> {decision.selected_ids.description_id}</li>
-              <li><span className="text-neutral-300">cta:</span> {decision.selected_ids.cta_id}</li>
-              <li><span className="text-neutral-300">proof:</span> {decision.selected_ids.proof_id}</li>
+              <li>
+                <span className="text-neutral-300">headline:</span>{" "}
+                {decision.selected_ids.headline_id}
+              </li>
+              <li>
+                <span className="text-neutral-300">desc:</span>{" "}
+                {decision.selected_ids.description_id}
+              </li>
+              <li>
+                <span className="text-neutral-300">cta:</span> {decision.selected_ids.cta_id}
+              </li>
+              <li>
+                <span className="text-neutral-300">proof:</span>{" "}
+                {decision.selected_ids.proof_id}
+              </li>
             </ul>
 
             {/* Scoring details */}
             {decision.scoring && (
               <>
                 <div className="my-2 h-px bg-neutral-100" />
-                <p className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
+                <p
+                  className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300"
+                  style={{ fontSize: "10px" }}
+                >
                   Scoring ({decision.scoring.model} · {decision.scoring.latency_ms}ms)
                 </p>
                 <ul className="space-y-0.5">
@@ -282,9 +373,11 @@ export function Hero() {
                       return (
                         <li key={`${s.slot}_${s.id}`} className="flex items-center gap-1">
                           <span className={isSelected ? "text-green-400" : "text-neutral-300"}>
-                            {isSelected ? "●" : "○"}
+                            {isSelected ? "\u25CF" : "\u25CB"}
                           </span>
-                          <span className={isSelected ? "text-neutral-500" : "text-neutral-300"}>
+                          <span
+                            className={isSelected ? "text-neutral-500" : "text-neutral-300"}
+                          >
                             {s.id.split("_").slice(1).join("_")}
                           </span>
                           <span className="ml-auto">{s.score.toFixed(2)}</span>
@@ -295,9 +388,56 @@ export function Hero() {
               </>
             )}
 
+            {/* Decision history */}
+            {history && history.upgrades.length > 1 && (
+              <>
+                <div className="my-2 h-px bg-neutral-100" />
+                <p
+                  className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300"
+                  style={{ fontSize: "10px" }}
+                >
+                  Decision history
+                </p>
+                <ul className="space-y-0.5">
+                  {history.upgrades.map((u, i) => (
+                    <li key={i} className="flex items-center gap-1">
+                      <span
+                        className={
+                          i === history.upgrades.length - 1
+                            ? "text-green-400"
+                            : "text-neutral-300"
+                        }
+                      >
+                        {i === history.upgrades.length - 1 ? "\u25CF" : "\u25CB"}
+                      </span>
+                      <span
+                        className={
+                          i === history.upgrades.length - 1
+                            ? "text-neutral-500"
+                            : "text-neutral-300"
+                        }
+                      >
+                        {u.method}
+                      </span>
+                      <span className="ml-auto text-neutral-300" style={{ fontSize: "9px" }}>
+                        {new Date(u.timestamp).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
             {/* Events */}
             <div className="my-2 h-px bg-neutral-100" />
-            <p className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
+            <p
+              className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300"
+              style={{ fontSize: "10px" }}
+            >
               Events ({events.length}/{ALL_EVENT_NAMES.length})
             </p>
             <ul className="max-h-40 space-y-0.5 overflow-y-auto">
@@ -310,16 +450,23 @@ export function Hero() {
                 }
                 return (
                   <li key={eventName} className="flex items-baseline gap-1.5">
-                    <span className={`shrink-0 ${color}`}>●</span>
+                    <span className={`shrink-0 ${color}`}>{"\u25CF"}</span>
                     <span className={last ? "text-neutral-500" : "text-neutral-300"}>
                       {eventName.replace("nw_", "")}
                     </span>
                     {fired.length > 1 && (
-                      <span className="text-neutral-300" style={{ fontSize: "9px" }}>×{fired.length}</span>
+                      <span className="text-neutral-300" style={{ fontSize: "9px" }}>
+                        {"\u00D7"}
+                        {fired.length}
+                      </span>
                     )}
                     {last && (
                       <span className="ml-auto text-neutral-300" style={{ fontSize: "9px" }}>
-                        {new Date(last.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                        {new Date(last.timestamp).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
                       </span>
                     )}
                   </li>
@@ -339,11 +486,7 @@ export function Hero() {
         />
       </section>
 
-      <BookingModal
-        open={bookingOpen}
-        onClose={() => setBookingOpen(false)}
-        variant="A"
-      />
+      <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} variant="A" />
     </>
   );
 }
