@@ -232,15 +232,16 @@ export function Hero() {
       >
         {/* Top bar: brand left, CTA right */}
         <div className="absolute left-6 right-6 top-8 flex items-center justify-between sm:left-12 sm:right-12 lg:left-24 lg:right-24">
-          <span className="text-sm font-semibold tracking-tight text-neutral-900">
+          <span className="text-[0.8125rem] font-semibold tracking-[-0.01em] text-neutral-900">
             Native Works
           </span>
           <button
             onClick={handleCtaClick}
             className="
-              rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white
-              transition-all hover:bg-neutral-800 active:bg-neutral-700
-              active:scale-[0.98]
+              rounded-full bg-neutral-900 px-5 py-2 text-[0.8125rem] font-medium text-white
+              transition-all duration-200
+              hover:bg-neutral-800 hover:shadow-lg hover:shadow-neutral-900/10
+              active:bg-neutral-700 active:scale-[0.97]
             "
           >
             <RewriteText text={content.cta.label} />
@@ -454,25 +455,26 @@ export function Hero() {
 
         {/* Proof widget — bottom right */}
         {content.proof.type !== "none" && (
-          <div className="absolute bottom-8 right-6 sm:right-12 lg:right-24">
+          <div className="absolute bottom-10 right-6 sm:right-12 lg:right-24">
             {content.proof.type === "showreel" ? (
-              <div className="group relative h-20 w-36 cursor-pointer overflow-hidden rounded-xl bg-neutral-100 transition-all duration-500 ease-out hover:h-44 hover:w-72 sm:h-24 sm:w-44 sm:hover:h-52 sm:hover:w-80">
-                <div className="flex h-full w-full items-center justify-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80 shadow-sm transition-transform duration-300 group-hover:scale-110">
-                    <svg className="ml-0.5 h-4 w-4 text-neutral-600" fill="currentColor" viewBox="0 0 24 24">
+              <div className="group relative aspect-video w-40 cursor-pointer overflow-hidden rounded-2xl bg-neutral-100/80 ring-1 ring-neutral-200/40 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:w-72 hover:shadow-xl hover:shadow-neutral-900/[0.04] sm:w-48 sm:hover:w-80">
+                <div className="absolute inset-0 bg-gradient-to-br from-neutral-50/80 to-neutral-100/60" />
+                <div className="relative flex h-full w-full items-center justify-center">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-neutral-900/[0.04] transition-all duration-300 group-hover:scale-110 group-hover:shadow-md">
+                    <svg className="ml-0.5 h-3 w-3 text-neutral-700" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M8 5v14l11-7z" />
                     </svg>
                   </div>
                 </div>
               </div>
             ) : content.proof.type === "kpi" ? (
-              <div className="flex flex-col items-end gap-1.5">
+              <div className="flex flex-col items-end gap-2">
                 {content.proof.content.split(" | ").map((stat, i) => (
                   <RewriteText
                     key={i}
                     text={stat}
                     as="p"
-                    className="text-right text-sm font-medium tabular-nums text-neutral-400"
+                    className="text-right text-[0.8rem] font-medium tracking-wide tabular-nums text-neutral-400/80"
                   />
                 ))}
               </div>
@@ -480,7 +482,7 @@ export function Hero() {
               <RewriteText
                 text={content.proof.content}
                 as="p"
-                className="max-w-xs text-right text-sm leading-relaxed text-neutral-400"
+                className="max-w-[17rem] text-right text-[0.8rem] leading-[1.6] text-neutral-400/80"
               />
             )}
           </div>
