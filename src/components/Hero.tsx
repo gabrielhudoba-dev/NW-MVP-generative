@@ -44,6 +44,7 @@ export function Hero() {
   const [ctx, setCtx] = useState<VisitorContext | null>(null);
   const [decision, setDecision] = useState<HeroDecision | null>(null);
   const [events, setEvents] = useState<StoredEvent[]>([]);
+  const activeSnapshotRef = useRef<string | null>(null);
   const showDebug = useDebugMode();
 
   // ── Decision pipeline — instant deterministic, then async AI upgrade ──
@@ -74,42 +75,25 @@ export function Hero() {
 
     // ── Step 1: INSTANT deterministic render ──
     const instant = reselectHeroFast(detected, device);
+    activeSnapshotRef.current = instant.snapshot_id;
     setDecision(instant);
 
     track(NW_EVENTS.HERO_STATE_DERIVED, {
       state_key: instant.state_key,
+      snapshot_id: instant.snapshot_id,
       ...instant.state_vector,
     });
 
     track(NW_EVENTS.HERO_VARIANT_SELECTED, {
       ...instant.selected_ids,
       state_key: instant.state_key,
+      snapshot_id: instant.snapshot_id,
       selection_method: "deterministic",
     });
 
     trackOnce(NW_EVENTS.HERO_VARIANT_SEEN);
 
-    // ── Step 2: Async AI upgrade — replaces deterministic when ready ──
-    selectHero(detected, device).then((aiDecision) => {
-      if (cancelled) return;
-      if (aiDecision.selection_method === "ai") {
-        setDecision(aiDecision);
-
-        track(NW_EVENTS.HERO_AI_SCORING_COMPLETED, {
-          selection_method: "ai",
-          scoring_model: aiDecision.scoring?.model,
-          scoring_latency_ms: aiDecision.scoring?.latency_ms,
-        });
-      }
-    });
-
-    // ── Weather: fetch as display-only signal, no re-scoring ──
-    detectWeather().then((weather) => {
-      if (cancelled) return;
-      setCtx((prev) => (prev ? { ...prev, weather } : prev));
-    });
-
-    // Enrich shared context
+    // Enrich shared context with deterministic result
     setTrackContext({
       visitor_type: detected.isReturning ? "returning" : "new",
       time_bucket: detected.timeOfDay,
@@ -123,8 +107,55 @@ export function Hero() {
       cta_id: instant.selected_ids.cta_id,
       proof_id: instant.selected_ids.proof_id,
       state_key: instant.state_key,
+      snapshot_id: instant.snapshot_id,
       selection_method: instant.selection_method,
       cta_label: instant.assembled.cta.label,
+    });
+
+    // ── Step 2: Async AI upgrade — replaces deterministic when ready ──
+    const currentSnapshotId = instant.snapshot_id;
+
+    selectHero(detected, device, currentSnapshotId).then((aiDecision) => {
+      if (cancelled) return;
+
+      // Stale response guard: only apply if this snapshot is still active
+      if (activeSnapshotRef.current !== currentSnapshotId) return;
+
+      if (aiDecision.selection_method === "ai") {
+        setDecision(aiDecision);
+
+        // Update tracking context with AI-selected IDs
+        setTrackContext({
+          headline_id: aiDecision.selected_ids.headline_id,
+          description_id: aiDecision.selected_ids.description_id,
+          cta_id: aiDecision.selected_ids.cta_id,
+          proof_id: aiDecision.selected_ids.proof_id,
+          selection_method: "ai",
+          cta_label: aiDecision.assembled.cta.label,
+          snapshot_id: aiDecision.snapshot_id,
+        });
+
+        track(NW_EVENTS.HERO_AI_SCORING_COMPLETED, {
+          selection_method: "ai",
+          snapshot_id: aiDecision.snapshot_id,
+          scoring_model: aiDecision.scoring?.model,
+          scoring_latency_ms: aiDecision.scoring?.latency_ms,
+        });
+
+        // Log variant re-selection by AI
+        track(NW_EVENTS.HERO_VARIANT_SELECTED, {
+          ...aiDecision.selected_ids,
+          state_key: aiDecision.state_key,
+          snapshot_id: aiDecision.snapshot_id,
+          selection_method: "ai",
+        });
+      }
+    });
+
+    // ── Weather: fetch as display-only signal, no re-scoring ──
+    detectWeather().then((weather) => {
+      if (cancelled) return;
+      setCtx((prev) => (prev ? { ...prev, weather } : prev));
     });
 
     // Bounce detection

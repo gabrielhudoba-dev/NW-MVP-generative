@@ -113,5 +113,6 @@ export interface HeroDecision {
   rejected_ids: string[];
   rules_applied: string[];
   ai_error: string | null;
+  snapshot_id: string;
   timestamp: number;
 }

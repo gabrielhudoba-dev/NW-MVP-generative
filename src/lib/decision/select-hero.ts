@@ -7,6 +7,11 @@ import { scoreHeroOptions, scoreDeterministic } from "../ai/score-hero-options";
 import { applyRules } from "./rules-filter";
 import { assembleHero } from "./assemble-hero";
 
+let snapshotCounter = 0;
+function generateSnapshotId(): string {
+  return `snap_${Date.now()}_${++snapshotCounter}`;
+}
+
 /**
  * Full hero selection pipeline:
  *
@@ -23,7 +28,8 @@ import { assembleHero } from "./assemble-hero";
  */
 export async function selectHero(
   ctx: VisitorContext,
-  device: DeviceContext
+  device: DeviceContext,
+  snapshotId?: string
 ): Promise<HeroDecision> {
   // Step 1 — derive user state
   const state = deriveUserState(ctx, device);
@@ -106,6 +112,7 @@ export async function selectHero(
     rejected_ids: result.rejected_ids,
     rules_applied: filtered.rules_applied,
     ai_error,
+    snapshot_id: snapshotId ?? generateSnapshotId(),
     timestamp: Date.now(),
   };
 }
@@ -151,6 +158,7 @@ export function reselectHeroFast(
     scoring = fallback;
   }
 
+  const sid = generateSnapshotId();
   return {
     assembled: result.assembled,
     state_vector: state,
@@ -161,6 +169,7 @@ export function reselectHeroFast(
     rejected_ids: result.rejected_ids,
     rules_applied: filtered.rules_applied,
     ai_error: "deterministic-only (instant render)",
+    snapshot_id: sid,
     timestamp: Date.now(),
   };
 }

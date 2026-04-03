@@ -6,7 +6,7 @@
 const SCORE_API_URL = "/api/score";
 const TIMEOUT_MS = 15000;
 const SCORING_VERSION = "1.0.0";
-const MODEL = "gpt-4o-mini";
+const MODEL = "gpt-5.4";
 
 export interface OpenAIMessage {
   role: "system" | "user" | "assistant";

@@ -1,19 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-const MODEL = "gpt-4o-mini";
+const MODEL = "gpt-5.4";
+
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 /**
  * POST /api/score
  *
- * Proxies the OpenAI scoring request server-side.
+ * Proxies the AI scoring request server-side.
  * Keeps the API key out of the browser bundle.
+ *
+ * Accepts: { messages: [{role, content}], temperature?, max_tokens? }
+ * Returns: { data: <parsed JSON>, model: string, latency_ms: number }
  */
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.OPENAI_API_KEY ?? process.env.NEXT_PUBLIC_OPENAI_API_KEY;
-
-  if (!apiKey) {
-    return NextResponse.json({ error: "No API key" }, { status: 500 });
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ error: "No API key configured" }, { status: 500 });
   }
 
   try {
@@ -26,29 +31,18 @@ export async function POST(req: NextRequest) {
 
     const start = Date.now();
 
-    const res = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        temperature,
-        max_tokens,
-        response_format: { type: "json_object" },
-      }),
+    const res = await client.responses.create({
+      model: MODEL,
+      input: messages.map((m: { role: string; content: string }) => ({
+        role: m.role as "system" | "user" | "assistant",
+        content: m.content,
+      })),
+      temperature,
+      max_output_tokens: max_tokens,
+      text: { format: { type: "json_object" } },
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.warn(`[api/score] OpenAI returned ${res.status}: ${text}`);
-      return NextResponse.json({ error: `OpenAI ${res.status}` }, { status: 502 });
-    }
-
-    const json = await res.json();
-    const content = json.choices?.[0]?.message?.content;
+    const content = res.output_text;
 
     if (!content) {
       return NextResponse.json({ error: "Empty response" }, { status: 502 });
@@ -56,11 +50,12 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       data: JSON.parse(content),
-      model: json.model ?? MODEL,
+      model: res.model ?? MODEL,
       latency_ms: Date.now() - start,
     });
   } catch (err) {
-    console.warn("[api/score] Error:", err);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.warn("[api/score] Error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
