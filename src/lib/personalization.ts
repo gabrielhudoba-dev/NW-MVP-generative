@@ -1,4 +1,6 @@
 import type { VariantId } from "./variants";
+import type { AcquisitionContext } from "./analytics/acquisition";
+import { detectAcquisition } from "./analytics/acquisition";
 
 export interface WeatherContext {
   temp: number | null;
@@ -11,13 +13,10 @@ export interface VisitorContext {
   timeOfDay: "morning" | "working" | "evening";
   isReturning: boolean;
   locale: string;
+  language: string;
   country: string | null;
   weather: WeatherContext;
-  utm: {
-    source: string | null;
-    medium: string | null;
-    campaign: string | null;
-  };
+  acquisition: AcquisitionContext;
 }
 
 const STORAGE_KEY = "nw_visitor";
@@ -36,26 +35,14 @@ function getTimeOfDay(): VisitorContext["timeOfDay"] {
   return "evening";
 }
 
-function getUtmParams(): VisitorContext["utm"] {
-  if (typeof window === "undefined") {
-    return { source: null, medium: null, campaign: null };
-  }
-  const params = new URLSearchParams(window.location.search);
-  return {
-    source: params.get("utm_source"),
-    medium: params.get("utm_medium"),
-    campaign: params.get("utm_campaign"),
-  };
-}
-
 /**
  * Picks variant based on UTM or assigns randomly with sticky persistence.
  */
-function resolveVariant(utm: VisitorContext["utm"]): VariantId {
+function resolveVariant(acq: AcquisitionContext): VariantId {
   // UTM-based overrides
-  if (utm.source === "linkedin" || utm.medium === "social") return "B";
-  if (utm.source === "google" || utm.medium === "cpc") return "C";
-  if (utm.campaign?.includes("product")) return "A";
+  if (acq.utm_source === "linkedin" || acq.utm_medium === "social") return "B";
+  if (acq.utm_source === "google" || acq.utm_medium === "cpc") return "C";
+  if (acq.utm_campaign?.includes("product")) return "A";
 
   // Check persisted variant
   if (typeof window !== "undefined") {
@@ -74,16 +61,14 @@ function resolveVariant(utm: VisitorContext["utm"]): VariantId {
  * Detects full visitor context. Call on mount (client-side).
  */
 export function detectVisitorContext(): VisitorContext {
-  const utm = getUtmParams();
-  const variant = resolveVariant(utm);
+  const acquisition = detectAcquisition();
+  const variant = resolveVariant(acquisition);
 
   let isReturning = false;
 
   if (typeof window !== "undefined") {
-    // Persist variant
     localStorage.setItem(VARIANT_KEY, variant);
 
-    // Track visits
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       const stored: StoredVisitor = raw
@@ -94,28 +79,28 @@ export function detectVisitorContext(): VisitorContext {
       isReturning = stored.visits > 1;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     } catch {
-      // localStorage unavailable — treat as new
+      // localStorage unavailable
     }
   }
 
-  const locale =
-    typeof navigator !== "undefined" ? navigator.language : "en-US";
+  const locale = typeof navigator !== "undefined" ? navigator.language : "en-US";
+  const language = locale.split("-")[0];
 
   return {
     variant,
     timeOfDay: getTimeOfDay(),
     isReturning,
     locale,
-    country: null, // MVP: could use Accept-Language or IP-based geo later
+    language,
+    country: null,
     weather: { temp: null, condition: null, city: null },
-    utm,
+    acquisition,
   };
 }
 
 /**
- * Fetches weather based on browser geolocation.
- * Uses wttr.in — free, no API key, no signup.
- * Returns null fields if unavailable.
+ * Fetches weather based on IP location via wttr.in.
+ * Non-blocking, no API key needed.
  */
 export async function detectWeather(): Promise<WeatherContext> {
   const empty: WeatherContext = { temp: null, condition: null, city: null };
@@ -144,10 +129,7 @@ export async function detectWeather(): Promise<WeatherContext> {
 
 /**
  * Resolves the country from server-side headers (Vercel provides this).
- * Call from a server component or middleware.
  */
-export function getCountryFromHeaders(
-  headers: Headers
-): string | null {
+export function getCountryFromHeaders(headers: Headers): string | null {
   return headers.get("x-vercel-ip-country") ?? null;
 }

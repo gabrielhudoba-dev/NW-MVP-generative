@@ -13,20 +13,24 @@ import {
   detectWeather,
   type VisitorContext,
 } from "@/lib/personalization";
-import { track, observeScrollBelowHero } from "@/lib/analytics";
+import {
+  track,
+  trackOnce,
+  setTrackContext,
+  observeScrollBelowHero,
+  markHeroMount,
+  NW_EVENTS,
+} from "@/lib/analytics";
 import { HeroContent } from "./HeroContent";
 import { BookingModal } from "./BookingModal";
-import { TrustSignal } from "./TrustSignal";
 
 function resolveCopy(ctx: VisitorContext): HeroCopy {
   const base = { ...variants[ctx.variant] };
 
-  // Apply evening overrides
   if (ctx.timeOfDay === "evening") {
     Object.assign(base, eveningOverrides[ctx.variant]);
   }
 
-  // Apply returning visitor overrides (takes precedence)
   if (ctx.isReturning) {
     Object.assign(base, returningOverrides[ctx.variant]);
   }
@@ -34,51 +38,139 @@ function resolveCopy(ctx: VisitorContext): HeroCopy {
   return base;
 }
 
+const VARIANT_LABELS: Record<VariantId, string> = {
+  A: "problem-led",
+  B: "authority-led",
+  C: "action-led",
+};
+
 interface HeroProps {
-  /** Force a specific variant — useful for testing / preview */
   forceVariant?: VariantId;
+}
+
+interface StoredEvent {
+  name: string;
+  timestamp: number;
+  status?: "sent" | "local";
+  [key: string]: unknown;
 }
 
 export function Hero({ forceVariant }: HeroProps) {
   const heroRef = useRef<HTMLElement>(null);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [ctx, setCtx] = useState<VisitorContext | null>(null);
+  const [events, setEvents] = useState<StoredEvent[]>([]);
 
+  // Initialize context + set shared tracking properties
   useEffect(() => {
     const detected = detectVisitorContext();
     if (forceVariant) detected.variant = forceVariant;
     setCtx(detected);
 
-    // Track variant impression
-    track({ name: "nw_hero_seen", variant: detected.variant });
-    track({
-      name: "nw_hero_variant_seen",
-      variant: detected.variant,
-      isReturning: detected.isReturning,
+    const copy = resolveCopy(detected);
+
+    // Set shared context that enriches every future event
+    setTrackContext({
+      hero_variant: detected.variant,
+      hero_variant_label: VARIANT_LABELS[detected.variant],
+      headline_id: `${detected.variant}_headline`,
+      cta_label: copy.primaryCta,
+      visitor_type: detected.isReturning ? "returning" : "new",
+      time_bucket: detected.timeOfDay,
+      locale: detected.locale,
+      language: detected.language,
+      country: detected.country,
+      // acquisition
+      utm_source: detected.acquisition.utm_source,
+      utm_medium: detected.acquisition.utm_medium,
+      utm_campaign: detected.acquisition.utm_campaign,
+      referrer: detected.acquisition.referrer,
+      referrer_group: detected.acquisition.referrer_group,
     });
+
+    // Mark timing origin
+    markHeroMount();
+
+    // Fire impression events (deduplicated via trackOnce)
+    trackOnce(NW_EVENTS.HERO_SEEN);
+    trackOnce(NW_EVENTS.HERO_VARIANT_SEEN);
 
     if (detected.isReturning) {
-      track({ name: "nw_return_visitor_detected", variant: detected.variant });
+      trackOnce(NW_EVENTS.RETURN_VISITOR_DETECTED);
     }
 
-    // Fetch weather async — non-blocking, updates when ready
+    if (forceVariant) {
+      track(NW_EVENTS.VARIANT_FORCED, { source: "prop" });
+    }
+
+    // Fetch weather async, update context when ready
     detectWeather().then((weather) => {
       setCtx((prev) => (prev ? { ...prev, weather } : prev));
+      // Update shared context with weather
+      setTrackContext({
+        hero_variant: detected.variant,
+        hero_variant_label: VARIANT_LABELS[detected.variant],
+        headline_id: `${detected.variant}_headline`,
+        cta_label: copy.primaryCta,
+        visitor_type: detected.isReturning ? "returning" : "new",
+        time_bucket: detected.timeOfDay,
+        locale: detected.locale,
+        language: detected.language,
+        country: detected.country,
+        city: weather.city,
+        weather: weather.condition,
+        temperature_c: weather.temp,
+        utm_source: detected.acquisition.utm_source,
+        utm_medium: detected.acquisition.utm_medium,
+        utm_campaign: detected.acquisition.utm_campaign,
+        referrer: detected.acquisition.referrer,
+        referrer_group: detected.acquisition.referrer_group,
+      });
     });
+
+    // Bounce detection — if user leaves within 10s without any interaction
+    const bounceTimer = setTimeout(() => {
+      // Will only fire if no scroll or CTA happened
+      trackOnce(NW_EVENTS.SESSION_BOUNCED_FROM_HERO);
+    }, 10_000);
+
+    const cancelBounce = () => clearTimeout(bounceTimer);
+    window.addEventListener("scroll", cancelBounce, { once: true });
+    window.addEventListener("click", cancelBounce, { once: true });
+
+    return () => {
+      cancelBounce();
+      window.removeEventListener("scroll", cancelBounce);
+      window.removeEventListener("click", cancelBounce);
+    };
   }, [forceVariant]);
 
   // Scroll tracking
   useEffect(() => {
     const el = heroRef.current;
     if (!el || !ctx) return;
-    return observeScrollBelowHero(el, ctx.variant);
+    return observeScrollBelowHero(el);
   }, [ctx]);
+
+  // Poll sessionStorage for event log (dev only)
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const read = () => {
+      try {
+        const raw = sessionStorage.getItem("nw_events");
+        if (raw) setEvents(JSON.parse(raw));
+      } catch { /* ignore */ }
+    };
+    read();
+    const id = setInterval(read, 500);
+    return () => clearInterval(id);
+  }, []);
 
   const handleBookingOpen = useCallback(() => {
     setBookingOpen(true);
   }, []);
 
-  // Skeleton while detecting context (prevents layout shift)
+  // Skeleton
   if (!ctx) {
     return (
       <section
@@ -92,7 +184,6 @@ export function Hero({ forceVariant }: HeroProps) {
           <div className="h-5 w-1/2 rounded bg-neutral-100" />
           <div className="flex gap-4">
             <div className="h-12 w-36 rounded-lg bg-neutral-100" />
-            <div className="h-12 w-32 rounded-lg bg-neutral-100" />
           </div>
         </div>
       </section>
@@ -112,23 +203,50 @@ export function Hero({ forceVariant }: HeroProps) {
         data-variant={ctx.variant}
         data-returning={ctx.isReturning}
       >
-        {/* Subtle top-left brand mark */}
+        {/* Brand mark */}
         <div className="absolute left-6 top-8 sm:left-12 lg:left-24">
           <span className="text-sm font-semibold tracking-tight text-neutral-900">
             Native Works
           </span>
         </div>
 
-        {/* Variant badge — only visible in development */}
+        {/* Generative context panel — dev only */}
         {process.env.NODE_ENV === "development" && (
-          <div className="absolute right-6 top-8 flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-400">
-            <span>Variant {ctx.variant}</span>
-            <span className="text-neutral-200">|</span>
-            <span>{ctx.timeOfDay}</span>
-            {ctx.isReturning && (
+          <div className="absolute right-6 top-8 z-10 rounded-lg border border-neutral-200 bg-white/95 px-4 py-3 text-xs text-neutral-500 backdrop-blur-sm sm:right-12 lg:right-24">
+            <p className="mb-2 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
+              Generative context
+            </p>
+            <ul className="space-y-1">
+              <li><span className="text-neutral-300">variant:</span> {ctx.variant} ({VARIANT_LABELS[ctx.variant]})</li>
+              <li><span className="text-neutral-300">timeOfDay:</span> {ctx.timeOfDay}</li>
+              <li><span className="text-neutral-300">returning:</span> {String(ctx.isReturning)}</li>
+              <li><span className="text-neutral-300">locale:</span> {ctx.locale}</li>
+              <li><span className="text-neutral-300">country:</span> {ctx.country ?? "—"}</li>
+              <li><span className="text-neutral-300">weather:</span> {ctx.weather.condition ?? "loading…"}</li>
+              <li><span className="text-neutral-300">temp:</span> {ctx.weather.temp !== null ? `${ctx.weather.temp}°C` : "loading…"}</li>
+              <li><span className="text-neutral-300">city:</span> {ctx.weather.city ?? "loading…"}</li>
+              <li><span className="text-neutral-300">referrer:</span> {ctx.acquisition.referrer_group}</li>
+              <li><span className="text-neutral-300">utm_source:</span> {ctx.acquisition.utm_source ?? "—"}</li>
+              <li><span className="text-neutral-300">utm_medium:</span> {ctx.acquisition.utm_medium ?? "—"}</li>
+              <li><span className="text-neutral-300">utm_campaign:</span> {ctx.acquisition.utm_campaign ?? "—"}</li>
+            </ul>
+            {events.length > 0 && (
               <>
-                <span className="text-neutral-200">|</span>
-                <span>returning</span>
+                <div className="my-2 h-px bg-neutral-100" />
+                <p className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
+                  PostHog Events ({events.length})
+                </p>
+                <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+                  {[...events].reverse().map((ev, i) => (
+                    <li key={i} className="flex items-baseline gap-1.5">
+                      <span className={`shrink-0 ${ev.status === "sent" ? "text-green-400" : "text-amber-400"}`}>●</span>
+                      <span className="text-neutral-500">{ev.name.replace("nw_", "")}</span>
+                      <span className="ml-auto text-neutral-300" style={{ fontSize: "9px" }}>
+                        {new Date(ev.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </>
             )}
           </div>
@@ -140,31 +258,6 @@ export function Hero({ forceVariant }: HeroProps) {
           variant={ctx.variant}
           onBookingOpen={handleBookingOpen}
         />
-
-        {/* Trust signal — bottom of hero */}
-        <div className="mt-16 sm:mt-20">
-          <TrustSignal />
-        </div>
-
-        {/* Scroll hint */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2">
-          <div className="flex flex-col items-center gap-2 text-neutral-300">
-            <span className="text-xs tracking-widest uppercase">Scroll</span>
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="animate-bounce"
-            >
-              <path d="M4 6l4 4 4-4" />
-            </svg>
-          </div>
-        </div>
       </section>
 
       <BookingModal

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import Cal, { getCalApi } from "@calcom/embed-react";
 import type { VariantId } from "@/lib/variants";
-import { track } from "@/lib/analytics";
+import { track, trackOnce, getTimeSinceHeroMount, NW_EVENTS } from "@/lib/analytics";
 
 interface BookingModalProps {
   open: boolean;
@@ -11,17 +11,31 @@ interface BookingModalProps {
   variant: VariantId;
 }
 
+const ABANDON_TIMEOUT_MS = 60_000; // 60s inactivity = abandoned
+
 /**
- * Cal.com booking modal — replaces the MVP placeholder form.
+ * Cal.com booking modal with full conversion tracking.
  *
- * Uses Cal.com inline embed inside a native <dialog>.
- * Listens to Cal.com embed events and forwards them to PostHog via track().
- *
- * Required env var: NEXT_PUBLIC_CAL_LINK (e.g. "native-works/30min")
+ * Tracks:
+ * - nw_booking_opened: modal shown
+ * - nw_booking_started: Cal.com form ready (user sees calendar)
+ * - nw_booking_completed: Cal.com confirms booking (key conversion)
+ * - nw_booking_modal_closed: user closes modal (X, escape, backdrop)
+ * - nw_booking_abandoned: user opened but didn't complete within timeout
  */
 export function BookingModal({ open, onClose, variant }: BookingModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const calInitialized = useRef(false);
+  const bookingCompleted = useRef(false);
+  const abandonTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openedAt = useRef<number | null>(null);
+
+  const clearAbandonTimer = useCallback(() => {
+    if (abandonTimer.current) {
+      clearTimeout(abandonTimer.current);
+      abandonTimer.current = null;
+    }
+  }, []);
 
   // Initialize Cal.com event listeners once
   useEffect(() => {
@@ -31,46 +45,75 @@ export function BookingModal({ open, onClose, variant }: BookingModalProps) {
     (async () => {
       const cal = await getCalApi();
 
-      // Track when the user navigates to the booking form
       cal("on", {
         action: "linkReady",
         callback: () => {
-          track({ name: "nw_booking_started", variant });
+          trackOnce(NW_EVENTS.BOOKING_STARTED, { booking_surface: "cal_embed" });
         },
       });
 
-      // Track successful booking — this is the key conversion event
       cal("on", {
         action: "bookingSuccessfulV2",
         callback: (e: { detail: { data: Record<string, unknown> } }) => {
-          track({ name: "nw_booking_completed", variant });
-          // Log full booking data in dev for debugging
-          if (process.env.NODE_ENV === "development") {
-            console.log("[cal.com] booking data:", e.detail.data);
-          }
+          bookingCompleted.current = true;
+          clearAbandonTimer();
+          track(NW_EVENTS.BOOKING_COMPLETED, {
+            booking_surface: "cal_embed",
+            booking_data: process.env.NODE_ENV === "development" ? e.detail.data : undefined,
+          });
         },
       });
     })();
-  }, [variant]);
+  }, [variant, clearAbandonTimer]);
 
+  // Open/close dialog + tracking
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
     if (open) {
       dialog.showModal();
-      track({ name: "nw_booking_opened", variant });
+      bookingCompleted.current = false;
+      openedAt.current = Date.now();
+
+      track(NW_EVENTS.BOOKING_OPENED, {
+        booking_surface: "cal_embed",
+        time_to_booking_open_ms: getTimeSinceHeroMount(),
+      });
+
+      // Start abandon timer
+      clearAbandonTimer();
+      abandonTimer.current = setTimeout(() => {
+        if (!bookingCompleted.current && open) {
+          track(NW_EVENTS.BOOKING_ABANDONED, {
+            booking_surface: "cal_embed",
+            time_in_modal_ms: openedAt.current ? Date.now() - openedAt.current : null,
+          });
+        }
+      }, ABANDON_TIMEOUT_MS);
     } else {
       dialog.close();
     }
-  }, [open, variant]);
+
+    return () => clearAbandonTimer();
+  }, [open, variant, clearAbandonTimer]);
 
   const handleClose = useCallback(() => {
+    clearAbandonTimer();
+    const timeInModal = openedAt.current ? Date.now() - openedAt.current : null;
+
+    if (!bookingCompleted.current) {
+      track(NW_EVENTS.BOOKING_MODAL_CLOSED, {
+        booking_surface: "cal_embed",
+        completed: false,
+        time_in_modal_ms: timeInModal,
+      });
+    }
+
     dialogRef.current?.close();
     onClose();
-  }, [onClose]);
+  }, [onClose, clearAbandonTimer]);
 
-  // Close on backdrop click
   const handleBackdropClick = useCallback(
     (e: React.MouseEvent<HTMLDialogElement>) => {
       if (e.target === dialogRef.current) {
@@ -80,17 +123,16 @@ export function BookingModal({ open, onClose, variant }: BookingModalProps) {
     [handleClose]
   );
 
-  // Close on Escape
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
     const onCancel = () => {
-      onClose();
+      handleClose();
     };
     dialog.addEventListener("cancel", onCancel);
     return () => dialog.removeEventListener("cancel", onCancel);
-  }, [onClose]);
+  }, [handleClose]);
 
   const calLink = process.env.NEXT_PUBLIC_CAL_LINK || "native-works/30min";
 
@@ -106,7 +148,6 @@ export function BookingModal({ open, onClose, variant }: BookingModalProps) {
       aria-label="Book a call with Native Works"
     >
       <div className="p-6 sm:p-8">
-        {/* Header */}
         <div className="mb-6 flex items-start justify-between">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-neutral-900">
@@ -139,7 +180,6 @@ export function BookingModal({ open, onClose, variant }: BookingModalProps) {
           </button>
         </div>
 
-        {/* Cal.com inline embed */}
         <div className="min-h-[400px]">
           <Cal
             calLink={calLink}

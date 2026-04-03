@@ -1,7 +1,7 @@
 "use client";
 
 import type { HeroCopy, VariantId } from "@/lib/variants";
-import { track } from "@/lib/analytics";
+import { track, getTimeSinceHeroMount, NW_EVENTS } from "@/lib/analytics";
 
 interface HeroContentProps {
   copy: HeroCopy;
@@ -32,11 +32,21 @@ export function HeroContent({ copy, variant, onBookingOpen }: HeroContentProps) 
         {copy.body}
       </p>
 
-      {/* CTAs */}
+      {/* CTA */}
       <div className="flex flex-wrap items-center gap-4">
         <button
           onClick={() => {
-            track({ name: "nw_primary_cta_clicked", variant });
+            const elapsed = getTimeSinceHeroMount();
+            track(NW_EVENTS.PRIMARY_CTA_CLICKED, {
+              cta_label: copy.primaryCta,
+              time_to_primary_cta_click_ms: elapsed,
+            });
+            // Also record timing as its own event for easy analysis
+            if (elapsed !== null) {
+              track(NW_EVENTS.TIME_TO_CTA_RECORDED, {
+                time_to_primary_cta_click_ms: elapsed,
+              });
+            }
             onBookingOpen();
           }}
           className="
@@ -46,21 +56,6 @@ export function HeroContent({ copy, variant, onBookingOpen }: HeroContentProps) 
           "
         >
           {copy.primaryCta}
-        </button>
-
-        <button
-          onClick={() => {
-            track({ name: "nw_secondary_cta_clicked", variant });
-            // MVP: scroll to a future "how we work" section
-            // For now, just track the click
-          }}
-          className="
-            rounded-lg border border-neutral-200 bg-white px-6 py-3 text-sm
-            font-medium text-neutral-600 transition-all hover:border-neutral-300
-            hover:text-neutral-900 active:scale-[0.98]
-          "
-        >
-          {copy.secondaryCta}
         </button>
       </div>
     </div>

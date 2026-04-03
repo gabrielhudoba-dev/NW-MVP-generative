@@ -3,6 +3,7 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { usePostHog } from "posthog-js/react";
+import { NW_EVENTS } from "@/lib/analytics";
 
 /**
  * Tracks nw_page_view on every route change (SPA navigation).
@@ -20,7 +21,7 @@ export function PostHogPageView() {
       if (params) {
         url = url + "?" + params;
       }
-      posthog.capture("nw_page_view", {
+      posthog.capture(NW_EVENTS.PAGE_VIEW, {
         $current_url: url,
       });
     }
