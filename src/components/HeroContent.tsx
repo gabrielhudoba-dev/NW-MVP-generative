@@ -1,6 +1,7 @@
 "use client";
 
 import { track, getTimeSinceHeroMount, NW_EVENTS } from "@/lib/analytics";
+import { RewriteText } from "./RewriteText";
 
 interface HeroContentProps {
   headline: string;
@@ -20,25 +21,35 @@ export function HeroContent({
   return (
     <div className="flex max-w-2xl flex-col gap-8">
       {/* Headline */}
-      <h1 className="text-4xl font-semibold leading-[1.15] tracking-tight text-neutral-900 sm:text-5xl lg:text-[3.5rem]">
-        {headline.split("\n").map((line, i) => (
-          <span key={i}>
-            {i > 0 && <br />}
-            {line}
-          </span>
-        ))}
-      </h1>
+      <RewriteText
+        text={headline}
+        as="h1"
+        className="text-4xl font-semibold leading-[1.15] tracking-tight text-neutral-900 sm:text-5xl lg:text-[3.5rem]"
+      >
+        {(displayed) =>
+          displayed.split("\n").map((line, i) => (
+            <span key={i}>
+              {i > 0 && <br />}
+              {line}
+            </span>
+          ))
+        }
+      </RewriteText>
 
       {/* Description */}
-      <p className="max-w-xl text-lg leading-relaxed text-neutral-500 sm:text-xl">
-        {description}
-      </p>
+      <RewriteText
+        text={description}
+        as="p"
+        className="max-w-xl text-lg leading-relaxed text-neutral-500 sm:text-xl"
+      />
 
       {/* Proof signal */}
       {proof && (
-        <p className="max-w-lg text-sm text-neutral-400">
-          {proof}
-        </p>
+        <RewriteText
+          text={proof}
+          as="p"
+          className="max-w-lg text-sm text-neutral-400"
+        />
       )}
 
       {/* CTA */}
@@ -63,7 +74,7 @@ export function HeroContent({
             active:scale-[0.98]
           "
         >
-          {ctaLabel}
+          <RewriteText text={ctaLabel} />
         </button>
       </div>
     </div>
