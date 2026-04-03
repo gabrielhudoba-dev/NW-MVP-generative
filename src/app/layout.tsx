@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Space_Grotesk, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 import { PostHogProvider, PostHogInit } from "@/lib/posthog";
 import { PostHogPageView } from "@/components/PostHogPageView";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -16,13 +17,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Native Works — Digital Product Authority",
+  title: "Native Works",
   description:
     "We define how digital products should work. Product clarity, system thinking, and decision quality for teams building complex products.",
   openGraph: {
-    title: "Native Works — Digital Product Authority",
-    description:
-      "Product clarity for teams building complex digital products.",
+    title: "Native Works",
+    description: "Product clarity for teams building complex digital products.",
     type: "website",
   },
 };
@@ -35,7 +35,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${spaceGrotesk.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <PostHogProvider>

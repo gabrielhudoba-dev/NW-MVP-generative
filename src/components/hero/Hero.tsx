@@ -13,45 +13,61 @@ interface HeroProps {
 }
 
 /**
- * Hero section — pure renderer.
+ * Hero — typography-led, asymmetric composition.
  *
- * No decision logic, no context detection, no state derivation.
- * Receives resolved content + metadata from parent.
+ * Headline anchored bottom-left at large scale.
+ * Proof counterweights bottom-right.
+ * Warm surface, no accent — restraint is the accent.
  */
 export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroProps) {
   return (
     <section
-      className="
-        relative flex min-h-svh flex-col justify-center
-        px-6 py-20 sm:px-12 lg:px-24
-      "
+      className="relative flex min-h-svh flex-col"
       data-state-key={stateKey}
       data-method={selectionMethod}
     >
-      {/* Top bar: brand left, CTA right */}
-      <div className="absolute left-6 right-6 top-8 flex items-center justify-between sm:left-12 sm:right-12 lg:left-24 lg:right-24">
-        <span className="text-[0.8125rem] font-semibold tracking-[-0.01em] text-neutral-900">
+      {/* ── Nav ── */}
+      <nav className="relative z-10 flex items-center justify-between px-6 pt-8 pb-4 sm:px-12 lg:px-16 xl:px-24">
+        <span
+          className="text-[0.75rem] font-medium uppercase"
+          style={{ color: "var(--muted-strong)", letterSpacing: "0.08em" }}
+        >
           Native Works
         </span>
         <HeroCta label={content.cta.label} onClick={onCtaClick} />
+      </nav>
+
+      {/* ── Content ── */}
+      <div className="flex flex-1 items-end px-6 pb-12 sm:px-12 sm:pb-16 lg:px-16 lg:pb-20 xl:px-24">
+        <div className="flex w-full flex-col gap-12 lg:flex-row lg:items-end lg:justify-between lg:gap-24">
+          {/* Headline + description */}
+          <div className="flex max-w-[42rem] flex-col gap-5 lg:gap-6">
+            <RewriteText
+              text={content.headline.text}
+              as="h1"
+              className="text-[clamp(2.25rem,6vw,4.75rem)] font-medium leading-[1.06] tracking-[-0.03em]"
+              style={{ color: "var(--ink)" }}
+            />
+            <RewriteText
+              text={content.description.text}
+              as="p"
+              className="max-w-[26rem] text-[1.0625rem] leading-[1.7]"
+              style={{ color: "var(--muted)" }}
+            />
+          </div>
+
+          {/* Proof widget */}
+          <div className="shrink-0 lg:pb-1">
+            <HeroProofWidget type={content.proof.type} content={content.proof.content} />
+          </div>
+        </div>
       </div>
 
-      {/* Headline + description */}
-      <div className="flex max-w-2xl flex-col gap-5 sm:gap-6">
-        <RewriteText
-          text={content.headline.text}
-          as="h1"
-          className="text-[2rem] font-semibold leading-[1.15] tracking-[-0.03em] text-neutral-900 sm:text-[3.25rem] sm:tracking-[-0.035em] lg:text-[4rem] lg:tracking-[-0.04em]"
-        />
-        <RewriteText
-          text={content.description.text}
-          as="p"
-          className="max-w-lg text-[1.05rem] leading-[1.7] text-neutral-500 sm:text-lg sm:leading-[1.7]"
-        />
-      </div>
-
-      {/* Proof widget */}
-      <HeroProofWidget type={content.proof.type} content={content.proof.content} />
+      {/* ── Bottom rule ── */}
+      <div
+        className="mx-6 sm:mx-12 lg:mx-16 xl:mx-24"
+        style={{ height: "1px", background: "var(--rule)" }}
+      />
     </section>
   );
 }

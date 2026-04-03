@@ -7,6 +7,7 @@ const CHAR_MS = 22;
 interface RewriteTextProps {
   text: string;
   className?: string;
+  style?: React.CSSProperties;
   as?: "h1" | "p" | "span";
   children?: (displayed: string) => React.ReactNode;
 }
@@ -15,7 +16,7 @@ interface RewriteTextProps {
  * Typewriter effect — when text changes, types out the new value
  * character by character. First render is instant.
  */
-export function RewriteText({ text, className, as: Tag = "span", children }: RewriteTextProps) {
+export function RewriteText({ text, className, style, as: Tag = "span", children }: RewriteTextProps) {
   const [displayed, setDisplayed] = useState(text);
   const prevRef = useRef(text);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,8 +48,8 @@ export function RewriteText({ text, className, as: Tag = "span", children }: Rew
   }, [text]);
 
   if (children) {
-    return <Tag className={className}>{children(displayed)}</Tag>;
+    return <Tag className={className} style={style}>{children(displayed)}</Tag>;
   }
 
-  return <Tag className={className}>{displayed}</Tag>;
+  return <Tag className={className} style={style}>{displayed}</Tag>;
 }
