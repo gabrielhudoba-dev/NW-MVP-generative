@@ -174,7 +174,7 @@ export function Hero({ forceVariant }: HeroProps) {
     read();
     const id = setInterval(read, 500);
     return () => clearInterval(id);
-  }, []);
+  }, [showDebug]);
 
   const handleBookingOpen = useCallback(() => {
     setBookingOpen(true);
