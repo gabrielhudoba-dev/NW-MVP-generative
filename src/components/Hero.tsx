@@ -242,7 +242,6 @@ export function Hero({ forceVariant }: HeroProps) {
               <li><span className="text-neutral-300">device:</span> {detectDevice().device_type}</li>
               <li><span className="text-neutral-300">referrer:</span> {ctx.acquisition.referrer_group}</li>
               <li><span className="text-neutral-300">utm_source:</span> {ctx.acquisition.utm_source ?? "—"}</li>
-              <li><span className="text-neutral-300">utm_campaign:</span> {ctx.acquisition.utm_campaign ?? "—"}</li>
             </ul>
             <div className="my-2 h-px bg-neutral-100" />
             <p className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
