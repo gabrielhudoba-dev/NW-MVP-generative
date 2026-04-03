@@ -40,6 +40,7 @@ export async function selectHero(
 
   let scoring: ReturnType<typeof scoreDeterministic>;
   let method: HeroDecision["selection_method"];
+  let ai_error: string | null = null;
 
   const aiPromise = scoreHeroOptions(state, stateKey, entry);
   const raceResult = await Promise.race([
@@ -54,7 +55,10 @@ export async function selectHero(
     method = "ai";
   } else {
     scoring = scoreDeterministic(state, entry);
-    method = raceResult.source === "timeout" ? "deterministic" : "deterministic";
+    method = "deterministic";
+    ai_error = raceResult.source === "timeout"
+      ? `AI timed out (>${AI_RACE_MS}ms)`
+      : "AI returned null (fetch failed or invalid response)";
   }
 
   // Step 5 — apply rules
@@ -100,6 +104,8 @@ export async function selectHero(
     selection_method: method,
     selected_ids: result.selected_ids,
     rejected_ids: result.rejected_ids,
+    rules_applied: filtered.rules_applied,
+    ai_error,
     timestamp: Date.now(),
   };
 }
@@ -153,6 +159,8 @@ export function reselectHeroFast(
     selection_method: "deterministic",
     selected_ids: result.selected_ids,
     rejected_ids: result.rejected_ids,
+    rules_applied: filtered.rules_applied,
+    ai_error: "deterministic-only (instant render)",
     timestamp: Date.now(),
   };
 }

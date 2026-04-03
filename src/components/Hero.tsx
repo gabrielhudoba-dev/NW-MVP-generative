@@ -14,7 +14,6 @@ import {
   markHeroMount,
   detectDevice,
   NW_EVENTS,
-  type DeviceContext,
 } from "@/lib/analytics";
 import { selectHero, reselectHeroFast } from "@/lib/decision/select-hero";
 import type { HeroDecision } from "@/lib/hero/types";
@@ -28,13 +27,6 @@ interface StoredEvent {
   timestamp: number;
   status?: "sent" | "local";
   [key: string]: unknown;
-}
-
-/** Tracks which methods have contributed to the current decision */
-interface DecisionHistory {
-  initial: "deterministic";
-  current: "deterministic" | "ai";
-  upgrades: { method: string; timestamp: number }[];
 }
 
 function useDebugMode() {
@@ -51,13 +43,8 @@ export function Hero() {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [ctx, setCtx] = useState<VisitorContext | null>(null);
   const [decision, setDecision] = useState<HeroDecision | null>(null);
-  const [history, setHistory] = useState<DecisionHistory | null>(null);
   const [events, setEvents] = useState<StoredEvent[]>([]);
   const showDebug = useDebugMode();
-
-  // Keep refs for async callbacks
-  const ctxRef = useRef<VisitorContext | null>(null);
-  const deviceRef = useRef<DeviceContext | null>(null);
 
   // ── Decision pipeline — instant deterministic, then async AI upgrade ──
   useEffect(() => {
@@ -65,8 +52,6 @@ export function Hero() {
 
     const detected = detectVisitorContext();
     const device = detectDevice();
-    ctxRef.current = detected;
-    deviceRef.current = device;
     setCtx(detected);
 
     // Set initial shared tracking context
@@ -90,11 +75,6 @@ export function Hero() {
     // ── Step 1: INSTANT deterministic render ──
     const instant = reselectHeroFast(detected, device);
     setDecision(instant);
-    setHistory({
-      initial: "deterministic",
-      current: "deterministic",
-      upgrades: [{ method: "deterministic", timestamp: Date.now() }],
-    });
 
     track(NW_EVENTS.HERO_STATE_DERIVED, {
       state_key: instant.state_key,
@@ -109,20 +89,11 @@ export function Hero() {
 
     trackOnce(NW_EVENTS.HERO_VARIANT_SEEN);
 
-    // ── Step 2: Async AI upgrade ──
+    // ── Step 2: Async AI upgrade — replaces deterministic when ready ──
     selectHero(detected, device).then((aiDecision) => {
       if (cancelled) return;
       if (aiDecision.selection_method === "ai") {
         setDecision(aiDecision);
-        setHistory((prev) =>
-          prev
-            ? {
-                ...prev,
-                current: "ai",
-                upgrades: [...prev.upgrades, { method: "ai", timestamp: Date.now() }],
-              }
-            : prev
-        );
 
         track(NW_EVENTS.HERO_AI_SCORING_COMPLETED, {
           selection_method: "ai",
@@ -132,24 +103,10 @@ export function Hero() {
       }
     });
 
-    // ── Step 3: Weather arrives → re-score ──
+    // ── Weather: fetch as display-only signal, no re-scoring ──
     detectWeather().then((weather) => {
       if (cancelled) return;
-      const updatedCtx = { ...detected, weather };
-      ctxRef.current = updatedCtx;
-      setCtx(updatedCtx);
-
-      const updated = reselectHeroFast(updatedCtx, device);
-      setDecision(updated);
-      setHistory((prev) =>
-        prev
-          ? {
-              ...prev,
-              current: "deterministic",
-              upgrades: [...prev.upgrades, { method: "weather-rescore", timestamp: Date.now() }],
-            }
-          : prev
-      );
+      setCtx((prev) => (prev ? { ...prev, weather } : prev));
     });
 
     // Enrich shared context
@@ -250,24 +207,6 @@ export function Hero() {
                 <span className="text-neutral-300">state:</span> {decision.state_key}
               </li>
               <li>
-                <span className="text-neutral-300">method:</span>{" "}
-                <span
-                  className={
-                    decision.selection_method === "ai" ? "text-green-500" : "text-amber-500"
-                  }
-                >
-                  {decision.selection_method}
-                </span>
-              </li>
-              {history && (
-                <li>
-                  <span className="text-neutral-300">pipeline:</span>{" "}
-                  <span className="text-neutral-400">
-                    {history.upgrades.map((u) => u.method).join(" → ")}
-                  </span>
-                </li>
-              )}
-              <li>
                 <span className="text-neutral-300">timeOfDay:</span> {ctx.timeOfDay}
               </li>
               <li>
@@ -300,6 +239,41 @@ export function Hero() {
                 {ctx.acquisition.utm_source ?? "\u2014"}
               </li>
             </ul>
+
+            {/* AI status */}
+            <div className="my-2 h-px bg-neutral-100" />
+            <p
+              className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300"
+              style={{ fontSize: "10px" }}
+            >
+              AI status
+            </p>
+            {decision.selection_method === "ai" ? (
+              <p className="text-green-500">active — AI scoring applied</p>
+            ) : (
+              <p className="text-amber-500">{decision.ai_error}</p>
+            )}
+
+            {/* Rules applied */}
+            <div className="my-2 h-px bg-neutral-100" />
+            <p
+              className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300"
+              style={{ fontSize: "10px" }}
+            >
+              Rules ({decision.rules_applied.length})
+            </p>
+            {decision.rules_applied.length > 0 ? (
+              <ul className="space-y-0.5">
+                {decision.rules_applied.map((rule) => (
+                  <li key={rule} className="flex items-center gap-1.5">
+                    <span className="text-amber-400">{"\u25CF"}</span>
+                    <span className="text-neutral-500">{rule}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-neutral-300">none — no guardrails triggered</p>
+            )}
 
             {/* State vector */}
             <div className="my-2 h-px bg-neutral-100" />
@@ -384,50 +358,6 @@ export function Hero() {
                         </li>
                       );
                     })}
-                </ul>
-              </>
-            )}
-
-            {/* Decision history */}
-            {history && history.upgrades.length > 1 && (
-              <>
-                <div className="my-2 h-px bg-neutral-100" />
-                <p
-                  className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300"
-                  style={{ fontSize: "10px" }}
-                >
-                  Decision history
-                </p>
-                <ul className="space-y-0.5">
-                  {history.upgrades.map((u, i) => (
-                    <li key={i} className="flex items-center gap-1">
-                      <span
-                        className={
-                          i === history.upgrades.length - 1
-                            ? "text-green-400"
-                            : "text-neutral-300"
-                        }
-                      >
-                        {i === history.upgrades.length - 1 ? "\u25CF" : "\u25CB"}
-                      </span>
-                      <span
-                        className={
-                          i === history.upgrades.length - 1
-                            ? "text-neutral-500"
-                            : "text-neutral-300"
-                        }
-                      >
-                        {u.method}
-                      </span>
-                      <span className="ml-auto text-neutral-300" style={{ fontSize: "9px" }}>
-                        {new Date(u.timestamp).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          second: "2-digit",
-                        })}
-                      </span>
-                    </li>
-                  ))}
                 </ul>
               </>
             )}

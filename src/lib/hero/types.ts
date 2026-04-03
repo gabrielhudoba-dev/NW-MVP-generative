@@ -111,5 +111,7 @@ export interface HeroDecision {
     proof_id: string;
   };
   rejected_ids: string[];
+  rules_applied: string[];
+  ai_error: string | null;
   timestamp: number;
 }
