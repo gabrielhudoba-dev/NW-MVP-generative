@@ -9,7 +9,7 @@ interface HeroContentProps {
 
 export function HeroContent({ headline, description }: HeroContentProps) {
   return (
-    <div className="flex max-w-2xl flex-col gap-5 sm:gap-6">
+    <div className="flex max-w-4xl flex-col gap-5 sm:gap-6">
       {/* Headline */}
       <RewriteText
         text={headline}
