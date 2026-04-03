@@ -21,6 +21,8 @@ import {
   markHeroMount,
   NW_EVENTS,
 } from "@/lib/analytics";
+
+const ALL_EVENT_NAMES = Object.values(NW_EVENTS);
 import { HeroContent } from "./HeroContent";
 import { BookingModal } from "./BookingModal";
 
@@ -240,25 +242,36 @@ export function Hero({ forceVariant }: HeroProps) {
               <li><span className="text-neutral-300">utm_medium:</span> {ctx.acquisition.utm_medium ?? "—"}</li>
               <li><span className="text-neutral-300">utm_campaign:</span> {ctx.acquisition.utm_campaign ?? "—"}</li>
             </ul>
-            {events.length > 0 && (
-              <>
-                <div className="my-2 h-px bg-neutral-100" />
-                <p className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
-                  PostHog Events ({events.length})
-                </p>
-                <ul className="max-h-40 space-y-0.5 overflow-y-auto">
-                  {[...events].reverse().map((ev, i) => (
-                    <li key={i} className="flex items-baseline gap-1.5">
-                      <span className={`shrink-0 ${ev.status === "sent" ? "text-green-400" : "text-amber-400"}`}>●</span>
-                      <span className="text-neutral-500">{ev.name.replace("nw_", "")}</span>
+            <div className="my-2 h-px bg-neutral-100" />
+            <p className="mb-1.5 font-medium uppercase tracking-widest text-neutral-300" style={{ fontSize: "10px" }}>
+              Events ({events.length}/{ALL_EVENT_NAMES.length})
+            </p>
+            <ul className="max-h-52 space-y-0.5 overflow-y-auto">
+              {ALL_EVENT_NAMES.map((eventName) => {
+                const fired = events.filter((ev) => ev.name === eventName);
+                const last = fired.length > 0 ? fired[fired.length - 1] : null;
+                let color = "text-neutral-300"; // not fired yet
+                if (last) {
+                  color = last.status === "sent" ? "text-green-400" : "text-amber-400";
+                }
+                return (
+                  <li key={eventName} className="flex items-baseline gap-1.5">
+                    <span className={`shrink-0 ${color}`}>●</span>
+                    <span className={last ? "text-neutral-500" : "text-neutral-300"}>
+                      {eventName.replace("nw_", "")}
+                    </span>
+                    {fired.length > 1 && (
+                      <span className="text-neutral-300" style={{ fontSize: "9px" }}>×{fired.length}</span>
+                    )}
+                    {last && (
                       <span className="ml-auto text-neutral-300" style={{ fontSize: "9px" }}>
-                        {new Date(ev.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                        {new Date(last.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
 
