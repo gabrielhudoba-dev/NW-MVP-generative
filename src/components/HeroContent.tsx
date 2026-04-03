@@ -1,20 +1,27 @@
 "use client";
 
-import type { HeroCopy, VariantId } from "@/lib/variants";
 import { track, getTimeSinceHeroMount, NW_EVENTS } from "@/lib/analytics";
 
 interface HeroContentProps {
-  copy: HeroCopy;
-  variant: VariantId;
+  headline: string;
+  description: string;
+  ctaLabel: string;
+  proof: string | null;
   onBookingOpen: () => void;
 }
 
-export function HeroContent({ copy, variant, onBookingOpen }: HeroContentProps) {
+export function HeroContent({
+  headline,
+  description,
+  ctaLabel,
+  proof,
+  onBookingOpen,
+}: HeroContentProps) {
   return (
     <div className="flex max-w-2xl flex-col gap-8">
       {/* Headline */}
       <h1 className="text-4xl font-semibold leading-[1.15] tracking-tight text-neutral-900 sm:text-5xl lg:text-[3.5rem]">
-        {copy.headline.split("\n").map((line, i) => (
+        {headline.split("\n").map((line, i) => (
           <span key={i}>
             {i > 0 && <br />}
             {line}
@@ -22,15 +29,17 @@ export function HeroContent({ copy, variant, onBookingOpen }: HeroContentProps) 
         ))}
       </h1>
 
-      {/* Subheadline */}
+      {/* Description */}
       <p className="max-w-xl text-lg leading-relaxed text-neutral-500 sm:text-xl">
-        {copy.subheadline}
+        {description}
       </p>
 
-      {/* Body */}
-      <p className="max-w-lg text-base leading-relaxed text-neutral-600">
-        {copy.body}
-      </p>
+      {/* Proof signal */}
+      {proof && (
+        <p className="max-w-lg text-sm text-neutral-400">
+          {proof}
+        </p>
+      )}
 
       {/* CTA */}
       <div className="flex flex-wrap items-center gap-4">
@@ -38,10 +47,9 @@ export function HeroContent({ copy, variant, onBookingOpen }: HeroContentProps) 
           onClick={() => {
             const elapsed = getTimeSinceHeroMount();
             track(NW_EVENTS.PRIMARY_CTA_CLICKED, {
-              cta_label: copy.primaryCta,
+              cta_label: ctaLabel,
               time_to_primary_cta_click_ms: elapsed,
             });
-            // Also record timing as its own event for easy analysis
             if (elapsed !== null) {
               track(NW_EVENTS.TIME_TO_CTA_RECORDED, {
                 time_to_primary_cta_click_ms: elapsed,
@@ -55,7 +63,7 @@ export function HeroContent({ copy, variant, onBookingOpen }: HeroContentProps) 
             active:scale-[0.98]
           "
         >
-          {copy.primaryCta}
+          {ctaLabel}
         </button>
       </div>
     </div>

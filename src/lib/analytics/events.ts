@@ -20,6 +20,12 @@ export const NW_EVENTS = {
   VARIANT_FORCED: "nw_variant_forced",
   DEBUG_MODE_OPENED: "nw_debug_mode_opened",
   TIME_TO_CTA_RECORDED: "nw_time_to_cta_recorded",
+  // Decision pipeline events
+  HERO_STATE_DERIVED: "nw_hero_state_derived",
+  HERO_OPTIONS_LOADED: "nw_hero_options_loaded",
+  HERO_AI_SCORING_COMPLETED: "nw_hero_ai_scoring_completed",
+  HERO_RULES_APPLIED: "nw_hero_rules_applied",
+  HERO_VARIANT_SELECTED: "nw_hero_variant_selected",
 } as const;
 
 export type NwEventName = (typeof NW_EVENTS)[keyof typeof NW_EVENTS];

@@ -2,7 +2,7 @@ import posthog from "posthog-js";
 import { type NwEventName, EXPERIMENT } from "./events";
 import { detectDevice } from "./device";
 import { getSessionId } from "./session";
-import type { VariantId } from "../variants";
+// VariantId no longer needed here — variant info comes via shared context
 
 /**
  * Event-specific properties that callers pass in.
