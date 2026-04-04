@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const MODEL = "gpt-5.4";
+const MODEL = "gpt-4o-mini";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,

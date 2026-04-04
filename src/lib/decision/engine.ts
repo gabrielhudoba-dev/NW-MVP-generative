@@ -24,11 +24,11 @@ import { loadHeroMatrix } from "../matrix/hero-matrix";
 import { scoreHeroDeterministic } from "./select-hero";
 import { applyHeroGuardrails } from "./apply-guardrails";
 import { assembleHero } from "./assemble-hero";
-import { selectSectionsDeterministic, applySectionAIScores } from "./select-sections";
+import { selectSectionsDeterministic } from "./select-sections";
 import { openaiChat, SCORING_VERSION } from "../ai/openai-client";
 import { buildHeroAIPrompt, HERO_AI_SYSTEM_MESSAGE } from "../ai/score-hero-options";
-import { buildSectionAIPrompt, SECTION_AI_SYSTEM_MESSAGE } from "../ai/score-section-sequence";
-import { parseHeroAIResponse, parseSectionAIResponse } from "../ai/schemas";
+import { parseHeroAIResponse } from "../ai/schemas";
+import { AI_SCORE_CACHE } from "../ai/precomputed-scores";
 
 // ─── Snapshot ID ────────────────────────────────────────────
 
@@ -93,31 +93,53 @@ async function runHeroAI(
   let method: HeroDecision["selection_method"];
   let ai_error: string | null = null;
 
-  const prompt = buildHeroAIPrompt(state, stateKey, matrix, ctx, device);
-  const aiResult = await openaiChat<unknown>([
-    { role: "system", content: HERO_AI_SYSTEM_MESSAGE },
-    { role: "user", content: prompt },
-  ]);
+  // 1. Precomputed cache — zero network cost (populated by `npm run generate-scores`)
+  const cacheKey = `${stateKey}_${device.device_type}`;
+  const cached = AI_SCORE_CACHE[cacheKey];
 
-  if (aiResult) {
-    const parsed = parseHeroAIResponse(aiResult.data);
+  if (cached) {
+    const parsed = parseHeroAIResponse(cached);
     if (parsed) {
       scoring = {
         scores: parsed,
-        model: aiResult.model,
+        model: cached.model,
         scoring_version: SCORING_VERSION,
-        latency_ms: aiResult.latency_ms,
+        latency_ms: 0,
       };
       method = "ai";
     } else {
       scoring = scoreHeroDeterministic(state, matrix);
       method = "deterministic";
-      ai_error = "AI response could not be parsed";
+      ai_error = "Precomputed cache entry could not be parsed";
     }
   } else {
-    scoring = scoreHeroDeterministic(state, matrix);
-    method = "deterministic";
-    ai_error = "AI returned null (fetch failed or invalid response)";
+    // 2. Live AI call — fallback when cache miss (new content not yet regenerated)
+    const prompt = buildHeroAIPrompt(state, stateKey, matrix, ctx, device);
+    const aiResult = await openaiChat<unknown>([
+      { role: "system", content: HERO_AI_SYSTEM_MESSAGE },
+      { role: "user", content: prompt },
+    ]);
+
+    if (aiResult) {
+      const parsed = parseHeroAIResponse(aiResult.data);
+      if (parsed) {
+        scoring = {
+          scores: parsed,
+          model: aiResult.model,
+          scoring_version: SCORING_VERSION,
+          latency_ms: aiResult.latency_ms,
+        };
+        method = "ai";
+      } else {
+        scoring = scoreHeroDeterministic(state, matrix);
+        method = "deterministic";
+        ai_error = "AI response could not be parsed";
+      }
+    } else {
+      scoring = scoreHeroDeterministic(state, matrix);
+      method = "deterministic";
+      ai_error = "AI returned null (fetch failed or invalid response)";
+    }
   }
 
   const { scores: filteredScores, rules_applied } = applyHeroGuardrails(
@@ -151,31 +173,6 @@ async function runHeroAI(
   };
 }
 
-// ─── Section Sequence (AI) ──────────────────────────────────
-
-async function runSectionsAI(
-  state: UserStateVector,
-  stateKey: string,
-  ctx: VisitorContext,
-  device: DeviceContext,
-  baseSections: SectionSequenceDecision
-): Promise<SectionSequenceDecision> {
-  const prompt = buildSectionAIPrompt(state, stateKey, baseSections.section_ids, ctx, device);
-  const aiResult = await openaiChat<unknown>([
-    { role: "system", content: SECTION_AI_SYSTEM_MESSAGE },
-    { role: "user", content: prompt },
-  ]);
-
-  if (aiResult) {
-    const parsed = parseSectionAIResponse(aiResult.data);
-    if (parsed) {
-      return applySectionAIScores(baseSections, parsed);
-    }
-  }
-
-  return baseSections;
-}
-
 // ─── Public API ─────────────────────────────────────────────
 
 /**
@@ -197,8 +194,9 @@ export function runPageDecisionFast(
 }
 
 /**
- * Async — tries AI scoring for both hero and sections.
- * Falls back to deterministic if AI fails.
+ * Async — AI scoring for hero (via precomputed cache or live call).
+ * Sections use deterministic resolver (sufficient quality, zero cost).
+ * Falls back to deterministic if AI fails or cache is empty.
  */
 export async function runPageDecision(
   ctx: VisitorContext,
@@ -209,13 +207,8 @@ export async function runPageDecision(
   const stateKey = deriveStateKey(state);
   const sid = snapshotId ?? generateSnapshotId();
 
-  // Run hero AI and section base in parallel
-  const baseSections = selectSectionsDeterministic(state, ctx.isReturning, sid);
-
-  const [hero, sections] = await Promise.all([
-    runHeroAI(state, stateKey, ctx, device, sid),
-    runSectionsAI(state, stateKey, ctx, device, baseSections),
-  ]);
+  const sections = selectSectionsDeterministic(state, ctx.isReturning, sid);
+  const hero = await runHeroAI(state, stateKey, ctx, device, sid);
 
   return { hero, sections, snapshot_id: sid, timestamp: Date.now() };
 }
