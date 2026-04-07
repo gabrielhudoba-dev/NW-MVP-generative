@@ -16,6 +16,7 @@ export function makeCtx(overrides: Partial<VisitorContext> = {}): VisitorContext
     locale: "en-US",
     language: "en",
     country: null,
+    geo_region: "unknown",
     weather: { temp: null, condition: null, city: null },
     acquisition: {
       utm_source: null,
@@ -25,6 +26,11 @@ export function makeCtx(overrides: Partial<VisitorContext> = {}): VisitorContext
       referrer_group: "direct",
       medium: "direct",
     },
+    scroll_depth: 0,
+    time_on_page_sec: 0,
+    pages_seen_session: 1,
+    case_study_views_session: 0,
+    booking_page_views_session: 0,
     ...overrides,
   };
 }
@@ -53,7 +59,6 @@ export function makeState(overrides: Partial<UserStateVector> = {}): UserStateVe
     intent_score: 0.3,
     trust_score: 0.3,
     energy_score: 0.5,
-    decision_speed_score: 0.4,
     attention_score: 0.5,
     familiarity_score: 0.0,
     ...overrides,

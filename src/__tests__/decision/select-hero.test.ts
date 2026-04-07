@@ -1,196 +1,161 @@
+/**
+ * scoreSlot tests — hero and description slot scoring.
+ *
+ * In Node test env: posterior_mean = 0.5 (no localStorage).
+ * final_score = prior_weight × prior_score + posterior_weight × 0.5
+ */
 import { describe, it, expect } from "vitest";
-import { scoreHeroDeterministic } from "@/lib/decision/select-hero";
-import { loadHeroMatrix } from "@/lib/matrix/hero-matrix";
-import { makeState } from "../helpers";
+import { scoreSlot } from "@/lib/decision/score-variants";
+import { makeCtx, makeDevice, makeMobile, makeState } from "../helpers";
 
-const matrix = loadHeroMatrix("any");
-
-function topId(slot: string, state: Parameters<typeof scoreHeroDeterministic>[0]) {
-  const result = scoreHeroDeterministic(state, matrix);
-  const sorted = [...result.scores[slot]].sort((a, b) => b.score - a.score);
-  return sorted[0].id;
-}
-
-function scoreOf(slot: string, id: string, state: Parameters<typeof scoreHeroDeterministic>[0]) {
-  const result = scoreHeroDeterministic(state, matrix);
-  return result.scores[slot].find((s) => s.id === id)?.score ?? -1;
-}
-
-// ── Headlines ────────────────────────────────────────────────
-
-describe("headline scoring", () => {
-  it("prefers problem headlines when exploring", () => {
-    const state = makeState({ intent_score: 0.2 }); // exploring
-    expect(topId("headline", state)).toMatch(/headline_problem/);
+describe("scoreSlot - hero", () => {
+  it("returns a score for every hero variant", () => {
+    const scores = scoreSlot("hero", makeState(), makeCtx(), makeDevice());
+    const ids = scores.map((s) => s.id);
+    expect(ids).toContain("problem_authority");
+    expect(ids).toContain("clarity_speed");
+    expect(ids).toContain("digital_product_authority");
+    expect(ids).toContain("quality_under_change");
   });
 
-  it("prefers authority headlines when evaluating", () => {
-    const state = makeState({ intent_score: 0.45 }); // evaluating
-    expect(topId("headline", state)).toMatch(/headline_authority/);
-  });
-
-  it("prefers action headlines when ready", () => {
-    const state = makeState({ intent_score: 0.7 }); // ready
-    expect(topId("headline", state)).toMatch(/headline_action/);
-  });
-
-  it("applies _b variant penalty", () => {
-    const state = makeState({ intent_score: 0.2 }); // exploring → problem
-    const scoreA = scoreOf("headline", "headline_problem_a", state);
-    const scoreB = scoreOf("headline", "headline_problem_b", state);
-    expect(scoreA).toBeGreaterThan(scoreB);
-    expect(scoreA - scoreB).toBeCloseTo(0.02, 2);
-  });
-
-  it("all headline scores are between 0 and 1", () => {
-    const states = [
-      makeState({ intent_score: 0.1 }),
-      makeState({ intent_score: 0.5 }),
-      makeState({ intent_score: 0.9 }),
-    ];
-    for (const s of states) {
-      const result = scoreHeroDeterministic(s, matrix);
-      for (const score of result.scores.headline) {
-        expect(score.score).toBeGreaterThanOrEqual(0);
-        expect(score.score).toBeLessThanOrEqual(1);
-      }
+  it("all scores are clamped 0–1 (no guardrails active)", () => {
+    const scores = scoreSlot("hero", makeState(), makeCtx(), makeDevice());
+    for (const s of scores) {
+      expect(s.score).toBeGreaterThanOrEqual(0);
+      expect(s.score).toBeLessThanOrEqual(1);
     }
   });
-});
 
-// ── Descriptions ─────────────────────────────────────────────
+  it("higher intent increases problem_authority and clarity_speed scores", () => {
+    const lowState  = makeState({ intent_score: 0.1 });
+    const highState = makeState({ intent_score: 0.9 });
+    const ctx = makeCtx();
+    const dev = makeDevice();
 
-describe("description scoring", () => {
-  it("prefers medium descriptions when high energy", () => {
-    const state = makeState({ energy_score: 0.6 }); // high
-    expect(topId("description", state)).toMatch(/desc_medium/);
-  });
+    const low  = scoreSlot("hero", lowState, ctx, dev);
+    const high = scoreSlot("hero", highState, ctx, dev);
 
-  it("prefers short descriptions when low energy", () => {
-    const state = makeState({ energy_score: 0.3 }); // low
-    expect(topId("description", state)).toMatch(/desc_short/);
-  });
+    const findScore = (scores: typeof low, id: string) =>
+      scores.find((s) => s.id === id)!.score;
 
-  it("medium vs short boundary at 0.45", () => {
-    const low = makeState({ energy_score: 0.44 });
-    const high = makeState({ energy_score: 0.45 });
-    expect(topId("description", low)).toMatch(/desc_short/);
-    expect(topId("description", high)).toMatch(/desc_medium/);
-  });
-});
-
-// ── CTA ──────────────────────────────────────────────────────
-
-describe("CTA scoring", () => {
-  it("prefers direct CTA for high trust + evaluating", () => {
-    const state = makeState({ intent_score: 0.5, trust_score: 0.6 });
-    expect(topId("cta", state)).toBe("cta_direct_a");
-  });
-
-  it("prefers direct CTA for medium trust + ready", () => {
-    const state = makeState({ intent_score: 0.7, trust_score: 0.4 });
-    expect(topId("cta", state)).toBe("cta_direct_a");
-  });
-
-  it("prefers guided CTA for low trust", () => {
-    const state = makeState({ trust_score: 0.2 });
-    expect(topId("cta", state)).toBe("cta_guided_a");
-  });
-
-  it("caps direct CTA at 0.25 when exploring", () => {
-    const state = makeState({ intent_score: 0.2 }); // exploring
-    const directScore = scoreOf("cta", "cta_direct_a", state);
-    expect(directScore).toBeLessThanOrEqual(0.25);
-  });
-
-  it("ensures guided >= 0.75 when exploring", () => {
-    const state = makeState({ intent_score: 0.2 }); // exploring
-    const guidedScore = scoreOf("cta", "cta_guided_a", state);
-    expect(guidedScore).toBeGreaterThanOrEqual(0.75);
-  });
-
-  it("low trust gives soft > direct", () => {
-    const state = makeState({ trust_score: 0.2, intent_score: 0.5 });
-    const soft = scoreOf("cta", "cta_soft_a", state);
-    const direct = scoreOf("cta", "cta_direct_a", state);
-    expect(soft).toBeGreaterThan(direct);
-  });
-});
-
-// ── Proof ────────────────────────────────────────────────────
-
-describe("proof scoring", () => {
-  it("prefers showreel_kpi for new users (familiarity < 0.3)", () => {
-    const state = makeState({ familiarity_score: 0.0 });
-    expect(topId("proof", state)).toBe("proof_showreel_kpi_a");
-    expect(scoreOf("proof", "proof_showreel_kpi_a", state)).toBe(0.9);
-  });
-
-  it("prefers showreel for low trust + familiar users", () => {
-    const state = makeState({ trust_score: 0.2, familiarity_score: 0.5 });
-    expect(topId("proof", state)).toBe("proof_showreel_a");
-    expect(scoreOf("proof", "proof_showreel_a", state)).toBe(0.8);
-  });
-
-  it("prefers kpi for high trust + evaluating (familiar user)", () => {
-    const state = makeState({ trust_score: 0.6, intent_score: 0.5, familiarity_score: 0.5 });
-    expect(topId("proof", state)).toBe("proof_kpi_a");
-    expect(scoreOf("proof", "proof_kpi_a", state)).toBe(0.8);
-  });
-
-  it("prefers argument for evaluating + medium trust (familiar user)", () => {
-    const state = makeState({ intent_score: 0.5, trust_score: 0.4, familiarity_score: 0.5 });
-    expect(topId("proof", state)).toBe("proof_argument_a");
-    expect(scoreOf("proof", "proof_argument_a", state)).toBe(0.7);
-  });
-
-  it("prefers none for low energy", () => {
-    const state = makeState({ energy_score: 0.3, familiarity_score: 0.5 });
-    const noneScore = scoreOf("proof", "proof_none", state);
-    expect(noneScore).toBeGreaterThanOrEqual(0.75);
-  });
-
-  it("caps showreel at 0.3 for low energy", () => {
-    const state = makeState({ energy_score: 0.3, familiarity_score: 0.5 });
-    const showreelScore = scoreOf("proof", "proof_showreel_a", state);
-    expect(showreelScore).toBeLessThanOrEqual(0.3);
-  });
-
-  it("new user + low energy: showreel_kpi capped, none still wins", () => {
-    const state = makeState({ familiarity_score: 0.0, energy_score: 0.3 });
-    // showreel_kpi starts at 0.9, capped to 0.35 by low energy
-    // none boosted to 0.75
-    expect(scoreOf("proof", "proof_showreel_kpi_a", state)).toBeLessThanOrEqual(0.35);
-    expect(topId("proof", state)).toBe("proof_none");
-  });
-});
-
-// ── Result Structure ─────────────────────────────────────────
-
-describe("scoreHeroDeterministic result", () => {
-  it("returns all 4 slots", () => {
-    const result = scoreHeroDeterministic(makeState(), matrix);
-    expect(Object.keys(result.scores)).toEqual(
-      expect.arrayContaining(["headline", "description", "cta", "proof"])
+    expect(findScore(high, "problem_authority")).toBeGreaterThan(
+      findScore(low, "problem_authority")
     );
   });
 
-  it("model is 'deterministic'", () => {
-    const result = scoreHeroDeterministic(makeState(), matrix);
-    expect(result.model).toBe("deterministic");
+  it("higher trust increases digital_product_authority score", () => {
+    const lowTrust  = makeState({ trust_score: 0.1 });
+    const highTrust = makeState({ trust_score: 0.9 });
+    const ctx = makeCtx();
+    const dev = makeDevice();
+
+    const low  = scoreSlot("hero", lowTrust, ctx, dev);
+    const high = scoreSlot("hero", highTrust, ctx, dev);
+
+    const findScore = (scores: typeof low, id: string) =>
+      scores.find((s) => s.id === id)!.score;
+
+    expect(findScore(high, "digital_product_authority")).toBeGreaterThan(
+      findScore(low, "digital_product_authority")
+    );
   });
 
-  it("all scores have reason 'deterministic'", () => {
-    const result = scoreHeroDeterministic(makeState(), matrix);
-    for (const slot of Object.values(result.scores)) {
-      for (const s of slot) {
-        expect(s.reason).toBe("deterministic");
-      }
+  it("each score has id, score, and reason", () => {
+    const scores = scoreSlot("hero", makeState(), makeCtx(), makeDevice());
+    for (const s of scores) {
+      expect(typeof s.id).toBe("string");
+      expect(typeof s.score).toBe("number");
+      expect(typeof s.reason).toBe("string");
     }
   });
+});
 
-  it("latency_ms is a non-negative number", () => {
-    const result = scoreHeroDeterministic(makeState(), matrix);
-    expect(result.latency_ms).toBeGreaterThanOrEqual(0);
+describe("scoreSlot - description", () => {
+  it("returns scores for all description variants", () => {
+    const scores = scoreSlot("description", makeState(), makeCtx(), makeDevice());
+    const ids = scores.map((s) => s.id);
+    expect(ids).toContain("short_operator");
+    expect(ids).toContain("medium_authority");
+    expect(ids).toContain("medium_outcome");
+    expect(ids).toContain("short_sharp");
+  });
+
+  it("mobile soft constraint boosts short_operator and penalises medium", () => {
+    const state = makeState();
+    const ctx   = makeCtx();
+
+    const desktop = scoreSlot("description", state, ctx, makeDevice());
+    const mobile  = scoreSlot("description", state, ctx, makeMobile());
+
+    const findScore = (scores: typeof desktop, id: string) =>
+      scores.find((s) => s.id === id)!.score;
+
+    expect(findScore(mobile, "short_operator")).toBeGreaterThan(
+      findScore(desktop, "short_operator")
+    );
+    expect(findScore(mobile, "medium_authority")).toBeLessThan(
+      findScore(desktop, "medium_authority")
+    );
+  });
+});
+
+describe("scoreSlot - CTA hard guardrail", () => {
+  it("sets book_call_direct to -1 when trust < 0.20", () => {
+    const state = makeState({ trust_score: 0.15 });
+    const scores = scoreSlot("cta", state, makeCtx(), makeDevice());
+    const direct = scores.find((s) => s.id === "book_call_direct");
+    expect(direct).toBeDefined();
+    expect(direct!.score).toBe(-1);
+  });
+
+  it("does not exclude book_call_direct when trust >= 0.20", () => {
+    const state = makeState({ trust_score: 0.25 });
+    const scores = scoreSlot("cta", state, makeCtx(), makeDevice());
+    const direct = scores.find((s) => s.id === "book_call_direct");
+    expect(direct).toBeDefined();
+    expect(direct!.score).toBeGreaterThan(-1);
+  });
+
+  it("low_intent_soften_cta reduces book_call_direct when intent < 0.40", () => {
+    const low  = makeState({ intent_score: 0.30 });
+    const high = makeState({ intent_score: 0.50 });
+    const ctx = makeCtx();
+    const dev = makeDevice();
+
+    const lowScores  = scoreSlot("cta", low, ctx, dev);
+    const highScores = scoreSlot("cta", high, ctx, dev);
+
+    const findScore = (scores: typeof lowScores, id: string) =>
+      scores.find((s) => s.id === id)!.score;
+
+    expect(findScore(lowScores, "book_call_direct")).toBeLessThan(
+      findScore(highScores, "book_call_direct")
+    );
+    expect(findScore(lowScores, "see_how_it_works")).toBeGreaterThan(
+      findScore(highScores, "see_how_it_works")
+    );
+  });
+});
+
+describe("scoreSlot - section_sequence hard guardrail", () => {
+  it("excludes position_logic_proof_cta on mobile + very low energy", () => {
+    const state = makeState({ energy_score: 0.20 }); // < 0.25
+    const scores = scoreSlot("section_sequence", state, makeCtx(), makeMobile());
+    const seq = scores.find((s) => s.id === "position_logic_proof_cta");
+    expect(seq).toBeDefined();
+    expect(seq!.score).toBe(-1);
+  });
+
+  it("does not exclude position_logic_proof_cta on desktop", () => {
+    const state = makeState({ energy_score: 0.20 });
+    const scores = scoreSlot("section_sequence", state, makeCtx(), makeDevice());
+    const seq = scores.find((s) => s.id === "position_logic_proof_cta");
+    expect(seq).toBeDefined();
+    expect(seq!.score).toBeGreaterThan(-1);
+  });
+
+  it("returns 5 sequences", () => {
+    const scores = scoreSlot("section_sequence", makeState(), makeCtx(), makeDevice());
+    expect(scores).toHaveLength(5);
   });
 });

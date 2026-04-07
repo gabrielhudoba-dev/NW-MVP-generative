@@ -1,34 +1,37 @@
 /**
- * Decision engine — orchestrates the full decision pipeline.
+ * Decision engine — probabilistic scoring with epsilon-greedy exploration.
  *
- * Pipeline:
- *   1. Collect context → derive state vector
- *   2. Load allowed options (matrix / sequence config)
- *   3. Score options (deterministic)
- *   4. Apply guardrails
- *   5. Assemble final content
- *   6. (Async) AI scoring upgrade
+ * Pipeline (synchronous, 0ms):
+ *   1. Derive state vector from visitor context
+ *   2. Score all variants per slot (weighted sum prior + Beta-Bernoulli posterior)
+ *   3. Apply soft constraints (multipliers) and hard guardrails (exclusions)
+ *   4. Select variant per slot via epsilon-greedy
+ *   5. Page-level reranking (incompatibilities + synergies)
+ *   6. Record impressions
+ *   7. Resolve content from IDs
  *
- * Two entry points:
- *   - runPageDecisionFast()  — synchronous, deterministic only
- *   - runPageDecision()      — async, tries AI upgrade
+ * Falls back to preset mapping if all variants in the hero slot have < 150 impressions.
+ *
+ * Single public entry point: runPageDecision()
+ * The old runPageDecisionFast() is aliased for backward compatibility.
  */
 
-import type { UserStateVector } from "../state/state-types";
 import type { VisitorContext } from "../context/collect-context";
 import type { DeviceContext } from "../analytics/device";
-import type { HeroDecision, SectionSequenceDecision, PageDecision, ScoringResult } from "./types";
+import type { PageDecision, Slot, SlotScore, DecisionMode } from "./types";
+import type { SectionId } from "../content/content-types";
 import { deriveUserState } from "../state/derive-user-state";
 import { deriveStateKey } from "../state/state-types";
-import { loadHeroMatrix } from "../matrix/hero-matrix";
-import { scoreHeroDeterministic } from "./select-hero";
-import { applyHeroGuardrails } from "./apply-guardrails";
-import { assembleHero } from "./assemble-hero";
-import { selectSectionsDeterministic } from "./select-sections";
-import { openaiChat, SCORING_VERSION } from "../ai/openai-client";
-import { buildHeroAIPrompt, HERO_AI_SYSTEM_MESSAGE } from "../ai/score-hero-options";
-import { parseHeroAIResponse } from "../ai/schemas";
-import { AI_SCORE_CACHE } from "../ai/precomputed-scores";
+import { scoreSlot } from "./score-variants";
+import { getEpsilon, selectVariant } from "./exploration";
+import { assembleWithReranking } from "./assembly";
+import { findPreset, VARIANT_PRIORS } from "./variant-config";
+import { recordImpression, getSlotMinImpressions } from "../learning/impressions";
+import { HEADLINES_MAP } from "../content/headlines";
+import { DESCRIPTIONS_MAP } from "../content/descriptions";
+import { CTAS_MAP } from "../content/ctas";
+import { PROOFS_MAP } from "../content/proofs";
+import { SECTION_SEQUENCES } from "../content/section-sequences";
 
 // ─── Snapshot ID ────────────────────────────────────────────
 
@@ -38,177 +41,154 @@ function generateSnapshotId(): string {
   return `snap_${Date.now()}_${++snapshotCounter}`;
 }
 
-// ─── Hero Decision (Deterministic) ──────────────────────────
+// ─── Preset Path ─────────────────────────────────────────────
 
-function runHeroDeterministic(
-  state: UserStateVector,
-  stateKey: string,
-  device: DeviceContext,
-  snapshotId: string
-): HeroDecision {
-  const matrix = loadHeroMatrix(stateKey);
-  let scoring = scoreHeroDeterministic(state, matrix);
-
-  const { scores: filteredScores, rules_applied } = applyHeroGuardrails(
-    scoring.scores, state, device
-  );
-  scoring = { ...scoring, scores: filteredScores };
-
-  let result;
-  try {
-    result = assembleHero(scoring.scores);
-  } catch {
-    const fallback = scoreHeroDeterministic(state, matrix);
-    result = assembleHero(fallback.scores);
-    scoring = fallback;
-  }
-
-  return {
-    content: result.content,
-    selected_ids: result.selected_ids,
-    state_vector: state,
-    state_key: stateKey,
-    scoring,
-    selection_method: "deterministic",
-    rejected_ids: result.rejected_ids,
-    rules_applied,
-    ai_error: "deterministic-only (instant render)",
-    snapshot_id: snapshotId,
-    timestamp: Date.now(),
-  };
-}
-
-// ─── Hero Decision (AI) ────────────────────────────────────
-
-async function runHeroAI(
-  state: UserStateVector,
-  stateKey: string,
+function runPreset(
   ctx: VisitorContext,
   device: DeviceContext,
   snapshotId: string
-): Promise<HeroDecision> {
-  const matrix = loadHeroMatrix(stateKey);
+): PageDecision | null {
+  const state = deriveUserState(ctx, device);
+  const preset = findPreset(state);
+  if (!preset) return null;
 
-  let scoring: ScoringResult;
-  let method: HeroDecision["selection_method"];
-  let ai_error: string | null = null;
+  const heroVariantIds = Object.keys(VARIANT_PRIORS.hero);
+  const minImpressions = getSlotMinImpressions("hero", heroVariantIds);
+  if (minImpressions >= 150) return null; // enough data → use scoring
 
-  // 1. Precomputed cache — zero network cost (populated by `npm run generate-scores`)
-  const cacheKey = `${stateKey}_${device.device_type}`;
-  const cached = AI_SCORE_CACHE[cacheKey];
+  const sections = resolveSequence(preset.section_sequence);
 
-  if (cached) {
-    const parsed = parseHeroAIResponse(cached);
-    if (parsed) {
-      scoring = {
-        scores: parsed,
-        model: cached.model,
-        scoring_version: SCORING_VERSION,
-        latency_ms: 0,
-      };
-      method = "ai";
-    } else {
-      scoring = scoreHeroDeterministic(state, matrix);
-      method = "deterministic";
-      ai_error = "Precomputed cache entry could not be parsed";
-    }
-  } else {
-    // 2. Live AI call — fallback when cache miss (new content not yet regenerated)
-    const prompt = buildHeroAIPrompt(state, stateKey, matrix, ctx, device);
-    const aiResult = await openaiChat<unknown>([
-      { role: "system", content: HERO_AI_SYSTEM_MESSAGE },
-      { role: "user", content: prompt },
-    ]);
+  const headline   = HEADLINES_MAP[preset.hero];
+  const description = DESCRIPTIONS_MAP[preset.description];
+  const cta        = CTAS_MAP[preset.cta];
+  const proof      = PROOFS_MAP[preset.proof];
 
-    if (aiResult) {
-      const parsed = parseHeroAIResponse(aiResult.data);
-      if (parsed) {
-        scoring = {
-          scores: parsed,
-          model: aiResult.model,
-          scoring_version: SCORING_VERSION,
-          latency_ms: aiResult.latency_ms,
-        };
-        method = "ai";
-      } else {
-        scoring = scoreHeroDeterministic(state, matrix);
-        method = "deterministic";
-        ai_error = "AI response could not be parsed";
-      }
-    } else {
-      scoring = scoreHeroDeterministic(state, matrix);
-      method = "deterministic";
-      ai_error = "AI returned null (fetch failed or invalid response)";
-    }
-  }
-
-  const { scores: filteredScores, rules_applied } = applyHeroGuardrails(
-    scoring.scores, state, device
-  );
-  scoring = { ...scoring, scores: filteredScores };
-
-  let result;
-  try {
-    result = assembleHero(scoring.scores);
-  } catch (err) {
-    console.warn("[engine] Hero assembly failed, using fallback:", err);
-    const fallback = scoreHeroDeterministic(state, matrix);
-    result = assembleHero(fallback.scores);
-    method = "fallback";
-    scoring = fallback;
-  }
+  if (!headline || !description || !cta || !proof) return null;
 
   return {
-    content: result.content,
-    selected_ids: result.selected_ids,
-    state_vector: state,
-    state_key: stateKey,
-    scoring,
-    selection_method: method,
-    rejected_ids: result.rejected_ids,
-    rules_applied,
-    ai_error,
-    snapshot_id: snapshotId,
-    timestamp: Date.now(),
+    content: { headline, description, cta, proof },
+    hero_variant:             preset.hero,
+    description_variant:      preset.description,
+    proof_variant:            preset.proof,
+    cta_variant:              preset.cta,
+    section_sequence_id:      preset.section_sequence,
+    sections,
+    state:                    state,
+    state_key:                deriveStateKey(state),
+    decision_mode:            "preset",
+    epsilon_value:            0,
+    snapshot_id:              snapshotId,
+    timestamp:                Date.now(),
+    scores:                   {},
+    constraints_applied:      ["cold_start_preset"],
   };
+}
+
+// ─── Scoring Path ─────────────────────────────────────────────
+
+function runScoring(
+  ctx: VisitorContext,
+  device: DeviceContext,
+  snapshotId: string
+): PageDecision {
+  const state     = deriveUserState(ctx, device);
+  const stateKey  = deriveStateKey(state);
+
+  const slots: Slot[] = ["hero", "description", "proof", "cta", "section_sequence"];
+
+  // Score all slots
+  const allScores: Partial<Record<Slot, SlotScore[]>> = {};
+  const epsilonValues: number[] = [];
+  const modes: DecisionMode[] = [];
+  const initial: Partial<Record<Slot, SlotScore>> = {};
+
+  for (const slot of slots) {
+    const scores = scoreSlot(slot, state, ctx, device);
+    allScores[slot] = scores;
+
+    const variantIds = scores.map((s) => s.id);
+    const epsilon = getEpsilon(ctx, variantIds, slot);
+    const { selected, mode } = selectVariant(scores, epsilon);
+
+    epsilonValues.push(epsilon);
+    modes.push(mode);
+    initial[slot] = selected;
+  }
+
+  // Page-level reranking
+  const { selections, constraints_applied } = assembleWithReranking(
+    allScores as Record<Slot, SlotScore[]>,
+    initial as Record<Slot, SlotScore>
+  );
+
+  // Record impressions for selected variants
+  for (const slot of slots) {
+    recordImpression(slot, selections[slot].id);
+  }
+
+  // Resolve content
+  const heroVariantId   = selections.hero.id;
+  const descVariantId   = selections.description.id;
+  const proofVariantId  = selections.proof.id;
+  const ctaVariantId    = selections.cta.id;
+  const seqId           = selections.section_sequence.id;
+
+  const headline    = HEADLINES_MAP[heroVariantId];
+  const description = DESCRIPTIONS_MAP[descVariantId];
+  const cta         = CTAS_MAP[ctaVariantId];
+  const proof       = PROOFS_MAP[proofVariantId];
+  const sections    = resolveSequence(seqId);
+
+  if (!headline || !description || !cta || !proof) {
+    throw new Error(
+      `Missing content: hero=${heroVariantId} desc=${descVariantId} cta=${ctaVariantId} proof=${proofVariantId}`
+    );
+  }
+
+  // Dominant decision mode: prefer "explore" if any slot explored
+  const decision_mode: DecisionMode = modes.includes("explore") ? "explore" : "exploit";
+  const epsilon_value = Math.max(...epsilonValues);
+
+  return {
+    content: { headline, description, cta, proof },
+    hero_variant:             heroVariantId,
+    description_variant:      descVariantId,
+    proof_variant:            proofVariantId,
+    cta_variant:              ctaVariantId,
+    section_sequence_id:      seqId,
+    sections,
+    state,
+    state_key:                stateKey,
+    decision_mode,
+    epsilon_value,
+    snapshot_id:              snapshotId,
+    timestamp:                Date.now(),
+    scores:                   allScores,
+    constraints_applied,
+  };
+}
+
+// ─── Helpers ─────────────────────────────────────────────────
+
+function resolveSequence(sequenceId: string): SectionId[] {
+  return (SECTION_SEQUENCES[sequenceId] ?? []) as SectionId[];
 }
 
 // ─── Public API ─────────────────────────────────────────────
 
 /**
- * Synchronous, 0ms — instant first render.
- * Deterministic hero + deterministic section sequence.
+ * Main entry point — synchronous, 0ms.
+ *
+ * Uses preset mapping if impressions are below cold-start threshold (< 150 per variant).
+ * Otherwise runs full probabilistic scoring + epsilon-greedy + assembly reranking.
  */
-export function runPageDecisionFast(
+export function runPageDecision(
   ctx: VisitorContext,
   device: DeviceContext
 ): PageDecision {
-  const state = deriveUserState(ctx, device);
-  const stateKey = deriveStateKey(state);
   const snapshotId = generateSnapshotId();
-
-  const hero = runHeroDeterministic(state, stateKey, device, snapshotId);
-  const sections = selectSectionsDeterministic(state, ctx.isReturning, snapshotId);
-
-  return { hero, sections, snapshot_id: snapshotId, timestamp: Date.now() };
+  return runPreset(ctx, device, snapshotId) ?? runScoring(ctx, device, snapshotId);
 }
 
-/**
- * Async — AI scoring for hero (via precomputed cache or live call).
- * Sections use deterministic resolver (sufficient quality, zero cost).
- * Falls back to deterministic if AI fails or cache is empty.
- */
-export async function runPageDecision(
-  ctx: VisitorContext,
-  device: DeviceContext,
-  snapshotId?: string
-): Promise<PageDecision> {
-  const state = deriveUserState(ctx, device);
-  const stateKey = deriveStateKey(state);
-  const sid = snapshotId ?? generateSnapshotId();
-
-  const sections = selectSectionsDeterministic(state, ctx.isReturning, sid);
-  const hero = await runHeroAI(state, stateKey, ctx, device, sid);
-
-  return { hero, sections, snapshot_id: sid, timestamp: Date.now() };
-}
+/** @deprecated Alias for backward compatibility. Use runPageDecision(). */
+export const runPageDecisionFast = runPageDecision;

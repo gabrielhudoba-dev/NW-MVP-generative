@@ -31,7 +31,7 @@ describe("exploring section sequences", () => {
     expect(result).toEqual(SECTION_SEQUENCE_CONFIG.exploring.overrides.returning);
   });
 
-  it("returns low_energy override when energy < 0.45", () => {
+  it("returns low_energy override when energy < 0.35", () => {
     const state = exploringState({ trust_score: 0.4, energy_score: 0.3 });
     expect(resolveSectionSequence(state, false)).toEqual(
       SECTION_SEQUENCE_CONFIG.exploring.overrides.low_energy

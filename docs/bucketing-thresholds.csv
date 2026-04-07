@@ -1,0 +1,9 @@
+Dimension,Bucket,Min,Max
+intent,exploring,0.00,0.34
+intent,evaluating,0.35,0.59
+intent,ready,0.60,1.00
+trust,low,0.00,0.34
+trust,medium,0.35,0.49
+trust,high,0.50,1.00
+energy,low,0.00,0.44
+energy,high,0.45,1.00

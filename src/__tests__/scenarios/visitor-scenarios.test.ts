@@ -1,14 +1,21 @@
 /**
  * End-to-end persona scenarios.
  *
- * Each test simulates a real visitor profile through the full decision pipeline
- * and verifies the complete output: state vector, hero selection, section sequence.
+ * Each test runs a persona through the full decision pipeline and verifies
+ * the flat PageDecision output. In test env (Node, no localStorage) the engine
+ * always uses the cold-start preset path.
+ *
+ * Preset selection rules (from variant-config.ts PRESETS):
+ *   1. intent < 0.40 && trust < 0.35 → problem_authority / short_operator / argument / see_how_it_works
+ *   2. intent < 0.40 && trust >= 0.35 → clarity_speed / medium_authority / showreel_kpi / review_my_product
+ *   3. intent >= 0.40 && < 0.70 && trust < 0.35 → quality_under_change / medium_outcome / argument / review_my_product
+ *   4. intent >= 0.40 && < 0.70 && trust >= 0.35 → digital_product_authority / medium_authority / kpi / book_diagnostic
+ *   5. intent >= 0.70 && trust >= 0.55 → digital_product_authority / medium_outcome / showreel_kpi / book_call_direct
  */
-
 import { describe, it, expect } from "vitest";
-import { runPageDecisionFast } from "@/lib/decision/engine";
+import { runPageDecision } from "@/lib/decision/engine";
 import { deriveUserState } from "@/lib/state/derive-user-state";
-import { deriveStateKey, intentBucket, trustBucket, energyBucket } from "@/lib/state/state-types";
+import { intentBucket, trustBucket, energyBucket, deriveStateKey } from "@/lib/state/state-types";
 import {
   PERSONA_NEW_DIRECT_DESKTOP,
   PERSONA_RETURNING_SEARCH,
@@ -18,277 +25,221 @@ import {
   PERSONA_EMAIL_RETURNING_EVENING,
 } from "../helpers";
 
-// ── Persona A: New visitor, desktop, working hours, direct ──
+// ── Shared assertions ──────────────────────────────────────────
+
+function assertValidDecision(ctx: typeof PERSONA_NEW_DIRECT_DESKTOP.ctx, device: typeof PERSONA_NEW_DIRECT_DESKTOP.device) {
+  const d = runPageDecision(ctx, device);
+  expect(d.content).toBeDefined();
+  expect(d.content.headline.text.length).toBeGreaterThan(0);
+  expect(d.content.description.text.length).toBeGreaterThan(0);
+  expect(d.content.cta.label.length).toBeGreaterThan(0);
+  expect(d.sections.length).toBeGreaterThan(0);
+  expect(d.state_key).toMatch(/^(exploring|evaluating|ready)_(low|medium|high)_(low|medium|high)$/);
+  expect(d.decision_mode).toBe("preset");
+  return d;
+}
+
+// ── Persona A: New visitor, desktop, working hours, direct ──────
 
 describe("Persona A: new direct desktop", () => {
   const { ctx, device } = PERSONA_NEW_DIRECT_DESKTOP;
-  const state = deriveUserState(ctx, device);
-  const decision = runPageDecisionFast(ctx, device);
+  // State: intent=0.38, trust=0.46, energy=0.65
+  // → exploring (0.38 < 0.40), medium (0.35 ≤ 0.46 < 0.60), high (0.65 ≥ 0.65)
 
-  it("derives exploring intent (0.4 < 0.6, but direct +0.1 → 0.4 = evaluating)", () => {
-    // 0.3 base + 0.1 (direct) = 0.4 → evaluating (>= 0.35)
-    expect(intentBucket(state)).toBe("evaluating");
+  it("derives exploring intent (0.38 < 0.40)", () => {
+    const state = deriveUserState(ctx, device);
+    expect(intentBucket(state)).toBe("exploring");
   });
 
-  it("derives high trust from direct traffic", () => {
-    // 0.3 + 0.2 (direct) = 0.5 → high
-    expect(trustBucket(state)).toBe("high");
+  it("derives medium trust from direct traffic (0.46)", () => {
+    const state = deriveUserState(ctx, device);
+    expect(trustBucket(state)).toBe("medium");
   });
 
-  it("derives high energy for desktop working hours", () => {
-    // 0.5 + 0.15 (working) + 0.05 (desktop) = 0.7 → high
+  it("derives high energy for desktop working hours (0.65)", () => {
+    const state = deriveUserState(ctx, device);
     expect(energyBucket(state)).toBe("high");
   });
 
-  it("state key is evaluating_high_high", () => {
-    expect(deriveStateKey(state)).toBe("evaluating_high_high");
+  it("state key is exploring_medium_high", () => {
+    const state = deriveUserState(ctx, device);
+    expect(deriveStateKey(state)).toBe("exploring_medium_high");
   });
 
-  it("selects authority headline (evaluating intent)", () => {
-    expect(decision.hero.selected_ids.headline).toMatch(/headline_authority/);
+  it("uses preset 2: clarity_speed / medium_authority", () => {
+    // intent < 0.40 && trust >= 0.35 → preset 2
+    const d = runPageDecision(ctx, device);
+    expect(d.hero_variant).toBe("clarity_speed");
+    expect(d.description_variant).toBe("medium_authority");
+    expect(d.proof_variant).toBe("showreel_kpi");
+    expect(d.cta_variant).toBe("review_my_product");
   });
 
-  it("selects medium description (high energy)", () => {
-    expect(decision.hero.selected_ids.description).toMatch(/desc_medium/);
-  });
-
-  it("selects direct CTA (high trust + evaluating)", () => {
-    expect(decision.hero.selected_ids.cta).toBe("cta_direct_a");
-  });
-
-  it("selects showreel_kpi proof (new user, familiarity 0.2 < 0.3)", () => {
-    // familiarity = 0.2 (from direct) < 0.3 → new user rule → showreel_kpi = 0.9
-    expect(decision.hero.selected_ids.proof).toBe("proof_showreel_kpi_a");
-  });
-
-  it("no guardrails applied (desktop, normal energy)", () => {
-    expect(decision.hero.rules_applied).toEqual([]);
-  });
-
-  it("shows evaluating high_trust section sequence", () => {
-    expect(decision.sections.section_ids).toEqual([
-      "position", "working_model", "intervention_logic", "proof_kpi", "cta_direct",
-    ]);
+  it("returns valid decision", () => {
+    assertValidDecision(ctx, device);
   });
 });
 
-// ── Persona B: Returning visitor, desktop, search ──────────
+// ── Persona B: Returning visitor, desktop, search ──────────────
 
 describe("Persona B: returning search desktop", () => {
   const { ctx, device } = PERSONA_RETURNING_SEARCH;
-  const state = deriveUserState(ctx, device);
-  const decision = runPageDecisionFast(ctx, device);
+  // returning: intent+0.12, trust+0.12; search: intent+0.14, energy+0.08, attention+0.08
+  // State: intent=0.30+0.12+0.14=0.56, trust=0.30+0.12=0.42
+  // → evaluating (0.56 ≥ 0.40), medium (0.42 ≥ 0.35), high (0.65+0.08=0.73)
 
-  it("has high familiarity from returning + search", () => {
-    // 0.0 + 0.5 (returning) = 0.5
-    expect(state.familiarity_score).toBeCloseTo(0.5, 2);
-  });
-
-  it("derives evaluating or ready intent", () => {
-    // 0.3 + 0.15 (returning) + 0.15 (search) = 0.6 → ready
-    expect(intentBucket(state)).toBe("ready");
-  });
-
-  it("derives high trust", () => {
-    // 0.3 + 0.15 (returning) = 0.45 → medium
-    expect(trustBucket(state)).toBe("medium");
-  });
-
-  it("uses returning section override for ready intent", () => {
-    // ready + returning → returning override
-    expect(decision.sections.section_ids).toEqual([
-      "business_model", "cta_direct",
-    ]);
-  });
-
-  it("selects action headline (ready intent)", () => {
-    expect(decision.hero.selected_ids.headline).toMatch(/headline_action/);
-  });
-
-  it("selects direct CTA (medium trust + ready)", () => {
-    expect(decision.hero.selected_ids.cta).toBe("cta_direct_a");
-  });
-});
-
-// ── Persona C: Mobile, evening, social, first visit ────────
-
-describe("Persona C: mobile evening social", () => {
-  const { ctx, device } = PERSONA_MOBILE_EVENING_SOCIAL;
-  const state = deriveUserState(ctx, device);
-  const decision = runPageDecisionFast(ctx, device);
-
-  it("has low trust from social", () => {
-    // 0.3 - 0.05 (social) = 0.25 → low
-    expect(trustBucket(state)).toBe("low");
-  });
-
-  it("has low energy from evening + mobile", () => {
-    // 0.5 - 0.15 (evening) - 0.1 (mobile) = 0.25 → low
-    expect(energyBucket(state)).toBe("low");
-  });
-
-  it("explores (low intent)", () => {
-    // 0.3 base, no boosts → exploring
-    expect(intentBucket(state)).toBe("exploring");
-  });
-
-  it("applies both mobile guardrails", () => {
-    expect(decision.hero.rules_applied).toContain("mobile_force_short_desc");
-    expect(decision.hero.rules_applied).toContain("mobile_avoid_heavy_proof");
-  });
-
-  it("selects short description (mobile guardrail)", () => {
-    expect(decision.hero.selected_ids.description).toMatch(/desc_short/);
-  });
-
-  it("selects problem headline (exploring)", () => {
-    expect(decision.hero.selected_ids.headline).toMatch(/headline_problem/);
-  });
-
-  it("selects guided CTA (low trust + exploring)", () => {
-    expect(decision.hero.selected_ids.cta).toBe("cta_guided_a");
-  });
-
-  it("uses exploring low_energy section sequence", () => {
-    // exploring + low_energy → low_energy override
-    expect(decision.sections.section_ids).toEqual([
-      "shift", "consequence", "cta_soft",
-    ]);
-  });
-
-  it("energy is very low (all penalties stack)", () => {
-    expect(state.energy_score).toBeLessThan(0.35);
-    // Should also trigger low_energy_no_proof guardrail
-    expect(decision.hero.rules_applied).toContain("low_energy_no_proof");
-  });
-});
-
-// ── Persona D: Desktop, CPC, returning ─────────────────────
-
-describe("Persona D: CPC returning desktop", () => {
-  const { ctx, device } = PERSONA_CPC_RETURNING;
-  const state = deriveUserState(ctx, device);
-  const decision = runPageDecisionFast(ctx, device);
-
-  it("has very high intent from CPC + returning + search", () => {
-    // 0.3 + 0.15 (returning) + 0.15 (search) + 0.15 (cpc) = 0.75 → ready
-    expect(intentBucket(state)).toBe("ready");
-  });
-
-  it("has high familiarity from returning + search", () => {
-    // 0.0 + 0.5 (returning) = 0.5
-    expect(state.familiarity_score).toBeCloseTo(0.5, 2);
-  });
-
-  it("selects action headline (ready intent)", () => {
-    expect(decision.hero.selected_ids.headline).toMatch(/headline_action/);
-  });
-
-  it("selects direct CTA", () => {
-    expect(decision.hero.selected_ids.cta).toBe("cta_direct_a");
-  });
-
-  it("uses returning section sequence override", () => {
-    // ready + returning → returning override
-    expect(decision.sections.section_ids).toEqual([
-      "business_model", "cta_direct",
-    ]);
-  });
-
-  it("high decision speed from CPC + returning", () => {
-    // 0.4 + 0.1 (returning) + 0.1 (cpc) + 0.05 (working) = 0.65
-    expect(state.decision_speed_score).toBeCloseTo(0.65, 2);
-  });
-});
-
-// ── Persona E: Mobile, weekend, referral ───────────────────
-
-describe("Persona E: mobile weekend referral", () => {
-  const { ctx, device } = PERSONA_MOBILE_WEEKEND_REFERRAL;
-  const state = deriveUserState(ctx, device);
-  const decision = runPageDecisionFast(ctx, device);
-
-  it("has medium trust from referral", () => {
-    // 0.3 + 0.15 (referral) = 0.45 → medium
-    expect(trustBucket(state)).toBe("medium");
-  });
-
-  it("explores (base intent only)", () => {
-    // 0.3 base → exploring
-    expect(intentBucket(state)).toBe("exploring");
-  });
-
-  it("has medium-to-low energy (weekend + mobile)", () => {
-    // 0.5 + 0.15 (working) - 0.1 (weekend) - 0.1 (mobile) = 0.45 → high boundary
-    expect(state.energy_score).toBeCloseTo(0.45, 2);
-  });
-
-  it("applies mobile guardrails", () => {
-    expect(decision.hero.rules_applied).toContain("mobile_force_short_desc");
-  });
-
-  it("selects short description on mobile", () => {
-    expect(decision.hero.selected_ids.description).toMatch(/desc_short/);
-  });
-
-  it("exploring default sections (medium trust, energy at boundary)", () => {
-    // energy 0.45 → high, trust 0.45 → medium, not returning
-    // → default exploring sequence
-    expect(decision.sections.section_ids).toEqual([
-      "shift", "consequence", "position_light", "cta_soft",
-    ]);
-  });
-});
-
-// ── Persona F: Desktop, email, returning, evening ──────────
-
-describe("Persona F: email returning evening", () => {
-  const { ctx, device } = PERSONA_EMAIL_RETURNING_EVENING;
-  const state = deriveUserState(ctx, device);
-  const decision = runPageDecisionFast(ctx, device);
-
-  it("has high trust from returning + email", () => {
-    // 0.3 + 0.15 (returning) + 0.1 (email) = 0.55 → high
-    expect(trustBucket(state)).toBe("high");
-  });
-
-  it("has evaluating intent from returning + email", () => {
-    // 0.3 + 0.15 (returning) + 0.1 (email) = 0.55 → evaluating
+  it("derives evaluating intent (returning + search boost)", () => {
+    const state = deriveUserState(ctx, device);
     expect(intentBucket(state)).toBe("evaluating");
   });
 
-  it("has lower energy from evening", () => {
-    // 0.5 - 0.15 (evening) + 0.05 (desktop) = 0.4 → low
-    expect(energyBucket(state)).toBe("low");
+  it("derives medium trust", () => {
+    const state = deriveUserState(ctx, device);
+    expect(trustBucket(state)).toBe("medium");
   });
 
-  it("uses returning section override (highest priority)", () => {
-    // evaluating + returning → returning override wins over low_energy
-    expect(decision.sections.section_ids).toEqual([
-      "position", "working_model", "business_model", "cta_direct",
-    ]);
+  it("uses preset 4: digital_product_authority / medium_authority / kpi / book_diagnostic", () => {
+    // intent >= 0.40 && < 0.70 && trust >= 0.35 → preset 4
+    const d = runPageDecision(ctx, device);
+    expect(d.hero_variant).toBe("digital_product_authority");
+    expect(d.cta_variant).toBe("book_diagnostic");
+    expect(d.proof_variant).toBe("kpi");
   });
 
-  it("selects medium description (desktop, despite low energy — no mobile guardrail)", () => {
-    // Scoring: low energy → short gets 0.8, medium gets 0.3
-    // No mobile guardrail on desktop → short wins by scoring
-    expect(decision.hero.selected_ids.description).toMatch(/desc_short/);
-  });
-
-  it("no mobile guardrails applied", () => {
-    expect(decision.hero.rules_applied).not.toContain("mobile_force_short_desc");
-  });
-
-  it("high familiarity from returning", () => {
-    // 0.0 + 0.5 (returning) = 0.5
-    expect(state.familiarity_score).toBeCloseTo(0.5, 2);
+  it("returns valid decision", () => {
+    assertValidDecision(ctx, device);
   });
 });
 
-// ── Cross-persona consistency ──────────────────────────────
+// ── Persona C: Mobile, evening, social, first visit ─────────────
 
-describe("cross-persona consistency", () => {
-  const personas = [
+describe("Persona C: mobile evening social", () => {
+  const { ctx, device } = PERSONA_MOBILE_EVENING_SOCIAL;
+  // social: trust-0.04; evening: energy-0.08; mobile: energy-0.10
+  // State: intent=0.30, trust=0.26, energy=0.32
+  // → exploring, low trust (0.26 < 0.35), low energy (0.32 < 0.35)
+
+  it("derives exploring intent (no positive acquisition signal)", () => {
+    const state = deriveUserState(ctx, device);
+    expect(intentBucket(state)).toBe("exploring");
+  });
+
+  it("derives low trust (social penalty)", () => {
+    const state = deriveUserState(ctx, device);
+    expect(trustBucket(state)).toBe("low");
+  });
+
+  it("state key is exploring_low_low", () => {
+    const state = deriveUserState(ctx, device);
+    expect(deriveStateKey(state)).toBe("exploring_low_low");
+  });
+
+  it("uses preset 1: problem_authority / short_operator / argument / see_how_it_works", () => {
+    // intent < 0.40 && trust < 0.35 → preset 1
+    const d = runPageDecision(ctx, device);
+    expect(d.hero_variant).toBe("problem_authority");
+    expect(d.description_variant).toBe("short_operator");
+    expect(d.cta_variant).toBe("see_how_it_works");
+  });
+
+  it("returns valid decision", () => {
+    assertValidDecision(ctx, device);
+  });
+});
+
+// ── Persona D: Desktop, CPC, returning ────────────────────────
+
+describe("Persona D: CPC returning desktop", () => {
+  const { ctx, device } = PERSONA_CPC_RETURNING;
+  // returning: intent+0.12, trust+0.12; search: intent+0.14; cpc: intent+0.10
+  // State: intent=0.30+0.12+0.14+0.10=0.66, trust=0.30+0.12=0.42
+  // → evaluating (0.40 ≤ 0.66 < 0.70), medium trust
+
+  it("derives evaluating intent (returning + search + cpc)", () => {
+    const state = deriveUserState(ctx, device);
+    expect(intentBucket(state)).toBe("evaluating");
+  });
+
+  it("derives medium trust", () => {
+    const state = deriveUserState(ctx, device);
+    expect(trustBucket(state)).toBe("medium");
+  });
+
+  it("uses preset 4: digital_product_authority / book_diagnostic", () => {
+    // intent >= 0.40 && < 0.70 && trust >= 0.35 → preset 4
+    const d = runPageDecision(ctx, device);
+    expect(d.hero_variant).toBe("digital_product_authority");
+    expect(d.cta_variant).toBe("book_diagnostic");
+  });
+
+  it("returns valid decision", () => {
+    assertValidDecision(ctx, device);
+  });
+});
+
+// ── Persona E: Mobile, weekend, referral ──────────────────────
+
+describe("Persona E: mobile weekend referral", () => {
+  const { ctx, device } = PERSONA_MOBILE_WEEKEND_REFERRAL;
+  // referral: trust+0.14; weekend: intent-0.05
+  // State: intent=0.30-0.05=0.25, trust=0.30+0.14=0.44
+  // → exploring, medium trust
+
+  it("derives exploring intent (weekend penalty reduces below 0.40)", () => {
+    const state = deriveUserState(ctx, device);
+    expect(intentBucket(state)).toBe("exploring");
+  });
+
+  it("derives medium trust (referral boost)", () => {
+    const state = deriveUserState(ctx, device);
+    expect(trustBucket(state)).toBe("medium");
+  });
+
+  it("uses preset 2: clarity_speed / review_my_product", () => {
+    // intent < 0.40 && trust >= 0.35 → preset 2
+    const d = runPageDecision(ctx, device);
+    expect(d.hero_variant).toBe("clarity_speed");
+    expect(d.cta_variant).toBe("review_my_product");
+  });
+
+  it("returns valid decision", () => {
+    assertValidDecision(ctx, device);
+  });
+});
+
+// ── Persona F: Desktop, email, returning, evening ─────────────
+
+describe("Persona F: email returning evening", () => {
+  const { ctx, device } = PERSONA_EMAIL_RETURNING_EVENING;
+  // email: intent+0.10, trust+0.08; returning: intent+0.12, trust+0.12
+  // State: intent=0.30+0.10+0.12=0.52, trust=0.30+0.08+0.12=0.50
+  // → evaluating (0.40 ≤ 0.52 < 0.70), medium trust (0.35 ≤ 0.50 < 0.60)
+
+  it("derives evaluating intent", () => {
+    const state = deriveUserState(ctx, device);
+    expect(intentBucket(state)).toBe("evaluating");
+  });
+
+  it("derives medium trust", () => {
+    const state = deriveUserState(ctx, device);
+    expect(trustBucket(state)).toBe("medium");
+  });
+
+  it("uses preset 4: digital_product_authority / book_diagnostic", () => {
+    const d = runPageDecision(ctx, device);
+    expect(d.hero_variant).toBe("digital_product_authority");
+    expect(d.cta_variant).toBe("book_diagnostic");
+  });
+
+  it("returns valid decision", () => {
+    assertValidDecision(ctx, device);
+  });
+});
+
+// ── Cross-scenario invariants ──────────────────────────────────
+
+describe("cross-scenario invariants", () => {
+  const allPersonas = [
     PERSONA_NEW_DIRECT_DESKTOP,
     PERSONA_RETURNING_SEARCH,
     PERSONA_MOBILE_EVENING_SOCIAL,
@@ -297,43 +248,27 @@ describe("cross-persona consistency", () => {
     PERSONA_EMAIL_RETURNING_EVENING,
   ];
 
-  it("all personas produce valid decisions", () => {
-    for (const { ctx, device } of personas) {
-      const decision = runPageDecisionFast(ctx, device);
-      expect(decision.hero.content.headline.text).toBeTruthy();
-      expect(decision.hero.content.cta.label).toBeTruthy();
-      expect(decision.sections.section_ids.length).toBeGreaterThan(0);
+  it("all personas produce valid decisions without crashing", () => {
+    for (const { ctx, device } of allPersonas) {
+      const d = runPageDecision(ctx, device);
+      expect(d.content).toBeDefined();
+      expect(d.sections.length).toBeGreaterThan(0);
     }
   });
 
-  it("all section sequences end with a CTA", () => {
-    for (const { ctx, device } of personas) {
-      const decision = runPageDecisionFast(ctx, device);
-      const last = decision.sections.section_ids[decision.sections.section_ids.length - 1];
-      expect(last).toMatch(/^cta_/);
+  it("all personas use preset mode (cold start)", () => {
+    for (const { ctx, device } of allPersonas) {
+      const d = runPageDecision(ctx, device);
+      expect(d.decision_mode).toBe("preset");
     }
   });
 
-  it("mobile personas always get short descriptions", () => {
-    const mobilePeople = [PERSONA_MOBILE_EVENING_SOCIAL, PERSONA_MOBILE_WEEKEND_REFERRAL];
-    for (const { ctx, device } of mobilePeople) {
-      const decision = runPageDecisionFast(ctx, device);
-      expect(decision.hero.selected_ids.description).toMatch(/desc_short/);
+  it("all persona decisions use new variant ID scheme", () => {
+    for (const { ctx, device } of allPersonas) {
+      const d = runPageDecision(ctx, device);
+      expect(d.hero_variant).not.toMatch(/^headline_/);
+      expect(d.description_variant).not.toMatch(/^desc_/);
+      expect(d.cta_variant).not.toMatch(/^cta_/);
     }
-  });
-
-  it("returning visitors never get exploring section sequences with 'shift'", () => {
-    const returning = [PERSONA_RETURNING_SEARCH, PERSONA_CPC_RETURNING, PERSONA_EMAIL_RETURNING_EVENING];
-    for (const { ctx, device } of returning) {
-      const decision = runPageDecisionFast(ctx, device);
-      expect(decision.sections.section_ids).not.toContain("shift");
-    }
-  });
-
-  it("all decisions have unique snapshot IDs", () => {
-    const ids = personas.map(({ ctx, device }) =>
-      runPageDecisionFast(ctx, device).snapshot_id
-    );
-    expect(new Set(ids).size).toBe(ids.length);
   });
 });

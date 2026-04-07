@@ -20,6 +20,15 @@ export interface PersonaPreset {
 
 const weather = { temp: null, condition: null, city: null };
 
+const sessionDefaults = {
+  geo_region: "unknown" as const,
+  scroll_depth: 0,
+  time_on_page_sec: 0,
+  pages_seen_session: 1,
+  case_study_views_session: 0,
+  booking_page_views_session: 0,
+};
+
 export const PERSONAS: PersonaPreset[] = [
   {
     id: "A",
@@ -42,6 +51,7 @@ export const PERSONAS: PersonaPreset[] = [
         referrer_group: "direct",
         medium: "direct",
       },
+      ...sessionDefaults,
     },
     device: {
       device_type: "desktop",
@@ -71,6 +81,7 @@ export const PERSONAS: PersonaPreset[] = [
         referrer_group: "search",
         medium: "organic",
       },
+      ...sessionDefaults,
     },
     device: {
       device_type: "desktop",
@@ -100,6 +111,7 @@ export const PERSONAS: PersonaPreset[] = [
         referrer_group: "social",
         medium: "social",
       },
+      ...sessionDefaults,
     },
     device: {
       device_type: "mobile",
@@ -129,6 +141,7 @@ export const PERSONAS: PersonaPreset[] = [
         referrer_group: "search",
         medium: "cpc",
       },
+      ...sessionDefaults,
     },
     device: {
       device_type: "desktop",
@@ -158,6 +171,7 @@ export const PERSONAS: PersonaPreset[] = [
         referrer_group: "referral",
         medium: "referral",
       },
+      ...sessionDefaults,
     },
     device: {
       device_type: "mobile",
@@ -187,6 +201,7 @@ export const PERSONAS: PersonaPreset[] = [
         referrer_group: "email",
         medium: "email",
       },
+      ...sessionDefaults,
     },
     device: {
       device_type: "desktop",

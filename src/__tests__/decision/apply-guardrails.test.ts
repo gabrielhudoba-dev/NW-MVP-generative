@@ -1,187 +1,192 @@
+/**
+ * Soft constraints and hard guardrails tests.
+ *
+ * Tests the SOFT_CONSTRAINTS and HARD_GUARDRAILS from variant-config.ts
+ * via the scoreSlot() function.
+ */
 import { describe, it, expect } from "vitest";
-import { applyHeroGuardrails, HERO_GUARDRAILS } from "@/lib/decision/apply-guardrails";
-import { scoreHeroDeterministic } from "@/lib/decision/select-hero";
-import { loadHeroMatrix } from "@/lib/matrix/hero-matrix";
-import { makeState, makeDevice, makeMobile } from "../helpers";
-import type { SlotScore } from "@/lib/decision/types";
+import { scoreSlot } from "@/lib/decision/score-variants";
+import { SOFT_CONSTRAINTS, HARD_GUARDRAILS } from "@/lib/decision/variant-config";
+import { makeState, makeCtx, makeDevice, makeMobile } from "../helpers";
 
-const matrix = loadHeroMatrix("any");
+// ─── Soft constraints ────────────────────────────────────────
 
-function getScore(scores: Record<string, SlotScore[]>, slot: string, id: string): number {
-  return scores[slot].find((s) => s.id === id)?.score ?? -1;
-}
-
-// ── mobile_force_short_desc ────────────────────────────────
-
-describe("mobile_force_short_desc guardrail", () => {
-  it("reduces medium descriptions on mobile", () => {
-    const state = makeState({ energy_score: 0.6 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const mediumBefore = getScore(scoring.scores, "description", "desc_medium_a");
-
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeMobile());
-    const mediumAfter = getScore(scores, "description", "desc_medium_a");
-
-    expect(mediumAfter).toBeLessThan(mediumBefore);
-    expect(mediumAfter).toBeCloseTo(mediumBefore * 0.4, 5);
+describe("soft constraint: mobile_prefer_short_desc", () => {
+  it("exists in SOFT_CONSTRAINTS", () => {
+    expect(SOFT_CONSTRAINTS.some((c) => c.id === "mobile_prefer_short_desc")).toBe(true);
   });
 
-  it("boosts short descriptions on mobile to at least 0.7", () => {
-    const state = makeState({ energy_score: 0.6 }); // high energy → short starts low (0.35)
-    const scoring = scoreHeroDeterministic(state, matrix);
+  it("mobile boosts short_operator relative to desktop", () => {
+    const state = makeState();
+    const ctx   = makeCtx();
 
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeMobile());
-    const shortAfter = getScore(scores, "description", "desc_short_a");
-    expect(shortAfter).toBeGreaterThanOrEqual(0.7);
+    const desktop = scoreSlot("description", state, ctx, makeDevice());
+    const mobile  = scoreSlot("description", state, ctx, makeMobile());
+
+    const get = (scores: typeof desktop, id: string) =>
+      scores.find((s) => s.id === id)!.score;
+
+    expect(get(mobile, "short_operator")).toBeGreaterThan(get(desktop, "short_operator"));
+    expect(get(mobile, "short_sharp")).toBeGreaterThan(get(desktop, "short_sharp"));
   });
 
-  it("does not trigger on desktop", () => {
-    const state = makeState({ energy_score: 0.6 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { rules_applied } = applyHeroGuardrails(scoring.scores, state, makeDevice());
-    expect(rules_applied).not.toContain("mobile_force_short_desc");
-  });
+  it("mobile penalises medium descriptions relative to desktop", () => {
+    const state = makeState();
+    const ctx   = makeCtx();
 
-  it("short desc wins over medium on mobile", () => {
-    const state = makeState({ energy_score: 0.6 }); // normally medium wins
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeMobile());
+    const desktop = scoreSlot("description", state, ctx, makeDevice());
+    const mobile  = scoreSlot("description", state, ctx, makeMobile());
 
-    const short = Math.max(
-      getScore(scores, "description", "desc_short_a"),
-      getScore(scores, "description", "desc_short_b")
-    );
-    const medium = Math.max(
-      getScore(scores, "description", "desc_medium_a"),
-      getScore(scores, "description", "desc_medium_b")
-    );
-    expect(short).toBeGreaterThan(medium);
+    const get = (scores: typeof desktop, id: string) =>
+      scores.find((s) => s.id === id)!.score;
+
+    expect(get(mobile, "medium_authority")).toBeLessThan(get(desktop, "medium_authority"));
+    expect(get(mobile, "medium_outcome")).toBeLessThan(get(desktop, "medium_outcome"));
   });
 });
 
-// ── mobile_avoid_heavy_proof ───────────────────────────────
-
-describe("mobile_avoid_heavy_proof guardrail", () => {
-  it("boosts proof_none to >= 0.7 on mobile", () => {
-    const state = makeState({ familiarity_score: 0.0 }); // new user
-    const scoring = scoreHeroDeterministic(state, matrix);
-
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeMobile());
-    expect(getScore(scores, "proof", "proof_none")).toBeGreaterThanOrEqual(0.7);
+describe("soft constraint: mobile_light_proof", () => {
+  it("exists in SOFT_CONSTRAINTS", () => {
+    expect(SOFT_CONSTRAINTS.some((c) => c.id === "mobile_light_proof")).toBe(true);
   });
 
-  it("reduces showreel by 0.5x on mobile", () => {
-    const state = makeState({ trust_score: 0.2, familiarity_score: 0.5 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const before = getScore(scoring.scores, "proof", "proof_showreel_a");
-
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeMobile());
-    const after = getScore(scores, "proof", "proof_showreel_a");
-    expect(after).toBeCloseTo(before * 0.5, 5);
-  });
-
-  it("reduces showreel_kpi by 0.4x on mobile", () => {
-    const state = makeState({ familiarity_score: 0.0 }); // showreel_kpi = 0.9
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const before = getScore(scoring.scores, "proof", "proof_showreel_kpi_a");
-
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeMobile());
-    const after = getScore(scores, "proof", "proof_showreel_kpi_a");
-    expect(after).toBeCloseTo(before * 0.4, 5);
-  });
-
-  it("leaves proof_argument_a untouched on mobile", () => {
+  it("mobile penalises showreel_kpi relative to desktop", () => {
     const state = makeState();
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const before = getScore(scoring.scores, "proof", "proof_argument_a");
+    const ctx   = makeCtx();
 
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeMobile());
-    const after = getScore(scores, "proof", "proof_argument_a");
-    expect(after).toBe(before);
-  });
+    const desktop = scoreSlot("proof", state, ctx, makeDevice());
+    const mobile  = scoreSlot("proof", state, ctx, makeMobile());
 
-  it("does not trigger on desktop", () => {
-    const state = makeState();
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { rules_applied } = applyHeroGuardrails(scoring.scores, state, makeDevice());
-    expect(rules_applied).not.toContain("mobile_avoid_heavy_proof");
+    const get = (scores: typeof desktop, id: string) =>
+      scores.find((s) => s.id === id)!.score;
+
+    expect(get(mobile, "showreel_kpi")).toBeLessThan(get(desktop, "showreel_kpi"));
   });
 });
 
-// ── low_energy_no_proof ────────────────────────────────────
-
-describe("low_energy_no_proof guardrail", () => {
-  it("triggers when energy < 0.35", () => {
-    const state = makeState({ energy_score: 0.3 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { rules_applied } = applyHeroGuardrails(scoring.scores, state, makeDevice());
-    expect(rules_applied).toContain("low_energy_no_proof");
+describe("soft constraint: low_energy_no_proof", () => {
+  it("exists in SOFT_CONSTRAINTS", () => {
+    expect(SOFT_CONSTRAINTS.some((c) => c.id === "low_energy_no_proof")).toBe(true);
   });
 
-  it("does not trigger at energy 0.35", () => {
-    const state = makeState({ energy_score: 0.35 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { rules_applied } = applyHeroGuardrails(scoring.scores, state, makeDevice());
-    expect(rules_applied).not.toContain("low_energy_no_proof");
+  it("low energy penalises showreel relative to no-constraint scenario", () => {
+    // energy=0.00 → constraint applies; energy=0.50 → no constraint (0.50 ≥ 0.35)
+    const lowEnergy  = makeState({ energy_score: 0.00 }); // < 0.35 → constraint
+    const highEnergy = makeState({ energy_score: 0.50 }); // ≥ 0.35 → no constraint
+    const ctx = makeCtx();
+    const dev = makeDevice();
+
+    const low  = scoreSlot("proof", lowEnergy, ctx, dev);
+    const high = scoreSlot("proof", highEnergy, ctx, dev);
+
+    const get = (scores: typeof low, id: string) =>
+      scores.find((s) => s.id === id)!.score;
+
+    // showreel is penalised by multiplier 0.92 when energy is low
+    expect(get(low, "showreel")).toBeLessThan(get(high, "showreel"));
+    // showreel_kpi also penalised (0.90 multiplier)
+    expect(get(low, "showreel_kpi")).toBeLessThan(get(high, "showreel_kpi"));
+  });
+});
+
+describe("soft constraint: low_intent_soften_cta", () => {
+  it("exists in SOFT_CONSTRAINTS", () => {
+    expect(SOFT_CONSTRAINTS.some((c) => c.id === "low_intent_soften_cta")).toBe(true);
   });
 
-  it("boosts proof_none to >= 0.85", () => {
-    const state = makeState({ energy_score: 0.2 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeDevice());
-    expect(getScore(scores, "proof", "proof_none")).toBeGreaterThanOrEqual(0.85);
+  it("low intent boosts see_how_it_works and reduces book_call_direct", () => {
+    const low  = makeState({ intent_score: 0.25, trust_score: 0.50 }); // < 0.40
+    const high = makeState({ intent_score: 0.55, trust_score: 0.50 });
+    const ctx = makeCtx();
+    const dev = makeDevice();
+
+    const lowScores  = scoreSlot("cta", low, ctx, dev);
+    const highScores = scoreSlot("cta", high, ctx, dev);
+
+    const get = (scores: typeof lowScores, id: string) =>
+      scores.find((s) => s.id === id)!.score;
+
+    expect(get(lowScores, "see_how_it_works")).toBeGreaterThan(get(highScores, "see_how_it_works"));
+    expect(get(lowScores, "book_call_direct")).toBeLessThan(get(highScores, "book_call_direct"));
+  });
+});
+
+describe("soft constraint: high_intent_trust_direct_cta", () => {
+  it("exists in SOFT_CONSTRAINTS", () => {
+    expect(SOFT_CONSTRAINTS.some((c) => c.id === "high_intent_trust_direct_cta")).toBe(true);
   });
 
-  it("reduces all other proofs by 0.5x", () => {
-    const state = makeState({ energy_score: 0.2, familiarity_score: 0.5 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const argBefore = getScore(scoring.scores, "proof", "proof_argument_a");
+  it("high intent+trust boosts book_call_direct", () => {
+    const low  = makeState({ intent_score: 0.50, trust_score: 0.40 });
+    const high = makeState({ intent_score: 0.80, trust_score: 0.70 }); // >= 0.70 intent + >= 0.55 trust
+    const ctx = makeCtx();
+    const dev = makeDevice();
 
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeDevice());
-    const argAfter = getScore(scores, "proof", "proof_argument_a");
-    expect(argAfter).toBeCloseTo(argBefore * 0.5, 5);
+    const lowScores  = scoreSlot("cta", low, ctx, dev);
+    const highScores = scoreSlot("cta", high, ctx, dev);
+
+    const get = (scores: typeof lowScores, id: string) =>
+      scores.find((s) => s.id === id)!.score;
+
+    expect(get(highScores, "book_call_direct")).toBeGreaterThan(get(lowScores, "book_call_direct"));
+  });
+});
+
+// ─── Hard guardrails ─────────────────────────────────────────
+
+describe("hard guardrail: brand_no_aggressive_cta_when_trust_very_low", () => {
+  it("exists in HARD_GUARDRAILS", () => {
+    expect(HARD_GUARDRAILS.some((g) => g.id === "brand_no_aggressive_cta_when_trust_very_low")).toBe(true);
   });
 
-  it("proof_none wins when energy very low", () => {
-    const state = makeState({ energy_score: 0.2 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { scores } = applyHeroGuardrails(scoring.scores, state, makeDevice());
+  it("excludes book_call_direct when trust < 0.20", () => {
+    const state = makeState({ trust_score: 0.19 });
+    const scores = scoreSlot("cta", state, makeCtx(), makeDevice());
+    const direct = scores.find((s) => s.id === "book_call_direct")!;
+    expect(direct.score).toBe(-1);
+    expect(direct.reason).toBe("hard_guardrail");
+  });
 
-    const noneScore = getScore(scores, "proof", "proof_none");
-    const others = scores.proof.filter((s) => s.id !== "proof_none");
-    for (const s of others) {
-      expect(noneScore).toBeGreaterThan(s.score);
+  it("does not exclude book_call_direct at exactly 0.20", () => {
+    const state = makeState({ trust_score: 0.20 });
+    const scores = scoreSlot("cta", state, makeCtx(), makeDevice());
+    const direct = scores.find((s) => s.id === "book_call_direct")!;
+    expect(direct.score).toBeGreaterThan(-1);
+  });
+
+  it("does not exclude other CTA variants with low trust", () => {
+    const state = makeState({ trust_score: 0.15 });
+    const scores = scoreSlot("cta", state, makeCtx(), makeDevice());
+    const nonDirect = scores.filter((s) => s.id !== "book_call_direct");
+    for (const s of nonDirect) {
+      expect(s.score).toBeGreaterThan(-1);
     }
   });
 });
 
-// ── Rule counting ──────────────────────────────────────────
-
-describe("guardrail rules_applied tracking", () => {
-  it("returns empty array for desktop + normal energy", () => {
-    const state = makeState({ energy_score: 0.6 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { rules_applied } = applyHeroGuardrails(scoring.scores, state, makeDevice());
-    expect(rules_applied).toEqual([]);
+describe("hard guardrail: mobile_no_heavy_sequence", () => {
+  it("exists in HARD_GUARDRAILS", () => {
+    expect(HARD_GUARDRAILS.some((g) => g.id === "mobile_no_heavy_sequence")).toBe(true);
   });
 
-  it("returns both mobile rules on mobile", () => {
-    const state = makeState({ energy_score: 0.6 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { rules_applied } = applyHeroGuardrails(scoring.scores, state, makeMobile());
-    expect(rules_applied).toContain("mobile_force_short_desc");
-    expect(rules_applied).toContain("mobile_avoid_heavy_proof");
-    expect(rules_applied).toHaveLength(2);
+  it("excludes position_logic_proof_cta on mobile with energy < 0.25", () => {
+    const state = makeState({ energy_score: 0.20 });
+    const scores = scoreSlot("section_sequence", state, makeCtx(), makeMobile());
+    const seq = scores.find((s) => s.id === "position_logic_proof_cta")!;
+    expect(seq.score).toBe(-1);
   });
 
-  it("returns all 3 rules for mobile + very low energy", () => {
-    const state = makeState({ energy_score: 0.2 });
-    const scoring = scoreHeroDeterministic(state, matrix);
-    const { rules_applied } = applyHeroGuardrails(scoring.scores, state, makeMobile());
-    expect(rules_applied).toHaveLength(3);
+  it("does not exclude on mobile with energy >= 0.25", () => {
+    const state = makeState({ energy_score: 0.30 });
+    const scores = scoreSlot("section_sequence", state, makeCtx(), makeMobile());
+    const seq = scores.find((s) => s.id === "position_logic_proof_cta")!;
+    expect(seq.score).toBeGreaterThan(-1);
   });
 
-  it("has exactly 3 guardrail rules defined", () => {
-    expect(HERO_GUARDRAILS).toHaveLength(3);
+  it("does not exclude on desktop even with very low energy", () => {
+    const state = makeState({ energy_score: 0.10 });
+    const scores = scoreSlot("section_sequence", state, makeCtx(), makeDevice());
+    const seq = scores.find((s) => s.id === "position_logic_proof_cta")!;
+    expect(seq.score).toBeGreaterThan(-1);
   });
 });

@@ -1,176 +1,186 @@
+/**
+ * Incompatibility and synergy rule tests.
+ *
+ * Tests the INCOMPATIBILITIES and SYNERGIES constants from variant-config.ts,
+ * and verifies they are applied correctly by assembleWithReranking.
+ */
 import { describe, it, expect } from "vitest";
 import {
-  checkHeroCompatibility,
-  checkSectionSequenceCoherence,
-} from "@/lib/matrix/compatibility-rules";
-import type { HeroContent } from "@/lib/content/content-types";
-import { HEADLINES_MAP } from "@/lib/content/headlines";
-import { DESCRIPTIONS_MAP } from "@/lib/content/descriptions";
-import { CTAS_MAP } from "@/lib/content/ctas";
-import { PROOFS_MAP } from "@/lib/content/proofs";
+  INCOMPATIBILITIES,
+  SYNERGIES,
+} from "@/lib/decision/variant-config";
+import { assembleWithReranking } from "@/lib/decision/assembly";
+import type { SlotScore, Slot } from "@/lib/decision/types";
 
-function makeHeroContent(overrides: {
-  headline?: string;
-  description?: string;
-  cta?: string;
-  proof?: string;
-} = {}): HeroContent {
+function s(id: string, score = 0.5): SlotScore {
+  return { id, score, reason: "test" };
+}
+
+function fullInitial(overrides: Partial<Record<Slot, SlotScore>>): Record<Slot, SlotScore> {
   return {
-    headline: HEADLINES_MAP[overrides.headline ?? "headline_authority_a"],
-    description: DESCRIPTIONS_MAP[overrides.description ?? "desc_medium_a"],
-    cta: CTAS_MAP[overrides.cta ?? "cta_guided_a"],
-    proof: PROOFS_MAP[overrides.proof ?? "proof_argument_a"],
+    hero:             s("clarity_speed"),
+    description:      s("medium_authority"),
+    proof:            s("kpi"),
+    cta:              s("book_diagnostic"),
+    section_sequence: s("position_proof_cta"),
+    ...overrides,
   };
 }
 
-// ── Hero Compatibility ─────────────────────────────────────
+function fullCandidates(overrides: Partial<Record<Slot, SlotScore[]>>): Record<Slot, SlotScore[]> {
+  return {
+    hero:             [s("clarity_speed")],
+    description:      [s("medium_authority")],
+    proof:            [s("kpi")],
+    cta:              [s("book_diagnostic")],
+    section_sequence: [s("position_proof_cta")],
+    ...overrides,
+  };
+}
 
-describe("checkHeroCompatibility", () => {
-  it("returns no violations for compatible combination", () => {
-    const content = makeHeroContent();
-    expect(checkHeroCompatibility(content)).toEqual([]);
+// ─── Incompatibility config ───────────────────────────────────
+
+describe("INCOMPATIBILITIES config", () => {
+  it("has 3 incompatibility rules", () => {
+    expect(INCOMPATIBILITIES).toHaveLength(3);
   });
 
-  it("detects action headline + soft CTA violation", () => {
-    const content = makeHeroContent({
-      headline: "headline_action_a",
-      cta: "cta_soft_a",
-    });
-    const violations = checkHeroCompatibility(content);
-    expect(violations).toHaveLength(1);
-    expect(violations[0].rule).toBe("action_headline_no_soft_cta");
+  it("problem_authority + book_call_direct has penalty 0.08", () => {
+    const rule = INCOMPATIBILITIES.find(
+      (r) => r.slots.hero === "problem_authority" && r.slots.cta === "book_call_direct"
+    );
+    expect(rule).toBeDefined();
+    expect(rule!.penalty).toBe(0.08);
   });
 
-  it("allows action headline + direct CTA", () => {
-    const content = makeHeroContent({
-      headline: "headline_action_a",
-      cta: "cta_direct_a",
-    });
-    expect(checkHeroCompatibility(content)).toEqual([]);
+  it("none + book_call_direct has penalty 0.10", () => {
+    const rule = INCOMPATIBILITIES.find(
+      (r) => r.slots.proof === "none" && r.slots.cta === "book_call_direct"
+    );
+    expect(rule).toBeDefined();
+    expect(rule!.penalty).toBe(0.10);
   });
 
-  it("allows action headline + guided CTA", () => {
-    const content = makeHeroContent({
-      headline: "headline_action_a",
-      cta: "cta_guided_a",
-    });
-    expect(checkHeroCompatibility(content)).toEqual([]);
-  });
-
-  it("detects problem headline + direct CTA violation", () => {
-    const content = makeHeroContent({
-      headline: "headline_problem_a",
-      cta: "cta_direct_a",
-    });
-    const violations = checkHeroCompatibility(content);
-    expect(violations).toHaveLength(1);
-    expect(violations[0].rule).toBe("problem_headline_no_direct_cta");
-  });
-
-  it("allows problem headline + guided CTA", () => {
-    const content = makeHeroContent({
-      headline: "headline_problem_a",
-      cta: "cta_guided_a",
-    });
-    expect(checkHeroCompatibility(content)).toEqual([]);
-  });
-
-  it("detects short description + showreel_kpi violation", () => {
-    const content = makeHeroContent({
-      description: "desc_short_a",
-      proof: "proof_showreel_kpi_a",
-    });
-    const violations = checkHeroCompatibility(content);
-    expect(violations).toHaveLength(1);
-    expect(violations[0].rule).toBe("short_desc_no_heavy_proof");
-  });
-
-  it("allows short description + kpi", () => {
-    const content = makeHeroContent({
-      description: "desc_short_a",
-      proof: "proof_kpi_a",
-    });
-    expect(checkHeroCompatibility(content)).toEqual([]);
-  });
-
-  it("allows medium description + showreel_kpi", () => {
-    const content = makeHeroContent({
-      description: "desc_medium_a",
-      proof: "proof_showreel_kpi_a",
-    });
-    expect(checkHeroCompatibility(content)).toEqual([]);
-  });
-
-  it("can detect multiple violations simultaneously", () => {
-    const content = makeHeroContent({
-      headline: "headline_problem_a",
-      description: "desc_short_a",
-      cta: "cta_direct_a",
-      proof: "proof_showreel_kpi_a",
-    });
-    const violations = checkHeroCompatibility(content);
-    expect(violations.length).toBeGreaterThanOrEqual(2);
-    const rules = violations.map((v) => v.rule);
-    expect(rules).toContain("problem_headline_no_direct_cta");
-    expect(rules).toContain("short_desc_no_heavy_proof");
+  it("short_operator + position_logic_proof_cta has penalty 0.06", () => {
+    const rule = INCOMPATIBILITIES.find(
+      (r) =>
+        r.slots.description === "short_operator" &&
+        r.slots.section_sequence === "position_logic_proof_cta"
+    );
+    expect(rule).toBeDefined();
+    expect(rule!.penalty).toBe(0.06);
   });
 });
 
-// ── Section Sequence Coherence ─────────────────────────────
+// ─── Synergy config ───────────────────────────────────────────
 
-describe("checkSectionSequenceCoherence", () => {
-  it("returns no violations for valid sequence", () => {
-    expect(checkSectionSequenceCoherence([
-      "shift", "consequence", "position_light", "cta_soft",
-    ])).toEqual([]);
+describe("SYNERGIES config", () => {
+  it("has 3 synergy rules", () => {
+    expect(SYNERGIES).toHaveLength(3);
   });
 
-  it("detects consecutive CTA sections", () => {
-    const violations = checkSectionSequenceCoherence([
-      "shift", "cta_soft", "cta_direct",
-    ]);
-    expect(violations).toHaveLength(1);
-    expect(violations[0].rule).toBe("no_consecutive_ctas");
+  it("digital_product_authority + kpi has boost 0.08", () => {
+    const rule = SYNERGIES.find(
+      (r) => r.slots.hero === "digital_product_authority" && r.slots.proof === "kpi"
+    );
+    expect(rule).toBeDefined();
+    expect(rule!.boost).toBe(0.08);
   });
 
-  it("allows non-consecutive CTA sections", () => {
-    expect(checkSectionSequenceCoherence([
-      "cta_soft", "shift", "cta_direct",
-    ])).toEqual([]);
+  it("quality_under_change + position_model_logic_cta has boost 0.06", () => {
+    const rule = SYNERGIES.find(
+      (r) =>
+        r.slots.hero === "quality_under_change" &&
+        r.slots.section_sequence === "position_model_logic_cta"
+    );
+    expect(rule).toBeDefined();
+    expect(rule!.boost).toBe(0.06);
   });
 
-  it("detects more than 2 proof sections", () => {
-    const violations = checkSectionSequenceCoherence([
-      "proof_showreel", "proof_kpi", "proof_argument", "cta_direct",
-    ]);
-    expect(violations).toHaveLength(1);
-    expect(violations[0].rule).toBe("max_two_proof_sections");
+  it("showreel_kpi + review_my_product has boost 0.07", () => {
+    const rule = SYNERGIES.find(
+      (r) => r.slots.proof === "showreel_kpi" && r.slots.cta === "review_my_product"
+    );
+    expect(rule).toBeDefined();
+    expect(rule!.boost).toBe(0.07);
+  });
+});
+
+// ─── Assembly integration: incompatibilities ──────────────────
+
+describe("assembly - incompatibility triggers constraint", () => {
+  it("records constraint when problem_authority + book_call_direct co-selected", () => {
+    const initial = fullInitial({
+      hero: s("problem_authority", 0.6),
+      cta:  s("book_call_direct", 0.6),
+    });
+    const candidates = fullCandidates({
+      hero: [s("problem_authority", 0.6), s("quality_under_change", 0.4)],
+      cta:  [s("book_call_direct", 0.6), s("see_how_it_works", 0.4)],
+    });
+
+    const { constraints_applied } = assembleWithReranking(candidates, initial);
+
+    const actioned =
+      constraints_applied.some((c) => c.startsWith("reranked:")) ||
+      constraints_applied.some((c) => c.startsWith("penalty:"));
+    expect(actioned).toBe(true);
   });
 
-  it("allows exactly 2 proof sections", () => {
-    expect(checkSectionSequenceCoherence([
-      "proof_showreel", "proof_kpi", "cta_direct",
-    ])).toEqual([]);
+  it("records constraint when none proof + book_call_direct co-selected", () => {
+    const initial = fullInitial({
+      proof: s("none", 0.6),
+      cta:   s("book_call_direct", 0.6),
+    });
+    const candidates = fullCandidates({
+      proof: [s("none", 0.6), s("kpi", 0.9)],
+      cta:   [s("book_call_direct", 0.6), s("see_how_it_works", 0.3)],
+    });
+
+    const { constraints_applied } = assembleWithReranking(candidates, initial);
+
+    const actioned =
+      constraints_applied.some((c) => c.startsWith("reranked:")) ||
+      constraints_applied.some((c) => c.startsWith("penalty:"));
+    expect(actioned).toBe(true);
+  });
+});
+
+// ─── Assembly integration: synergies ─────────────────────────
+
+describe("assembly - synergy recorded in constraints_applied", () => {
+  it("records synergy for showreel_kpi + review_my_product", () => {
+    const initial = fullInitial({
+      proof: s("showreel_kpi", 0.7),
+      cta:   s("review_my_product", 0.7),
+    });
+    const candidates = fullCandidates({
+      proof: [s("showreel_kpi", 0.7)],
+      cta:   [s("review_my_product", 0.7)],
+    });
+
+    const { constraints_applied } = assembleWithReranking(candidates, initial);
+
+    const synergies = constraints_applied.filter((c) => c.startsWith("synergy:"));
+    expect(synergies.length).toBeGreaterThan(0);
+    expect(
+      synergies.some((c) => c.includes("showreel_kpi") || c.includes("review_my_product"))
+    ).toBe(true);
   });
 
-  it("allows 0 proof sections", () => {
-    expect(checkSectionSequenceCoherence([
-      "shift", "consequence", "cta_soft",
-    ])).toEqual([]);
-  });
+  it("records synergy for digital_product_authority + kpi", () => {
+    const initial = fullInitial({
+      hero:  s("digital_product_authority", 0.7),
+      proof: s("kpi", 0.7),
+    });
+    const candidates = fullCandidates({
+      hero:  [s("digital_product_authority", 0.7)],
+      proof: [s("kpi", 0.7)],
+    });
 
-  it("returns empty for empty sequence", () => {
-    expect(checkSectionSequenceCoherence([])).toEqual([]);
-  });
+    const { constraints_applied } = assembleWithReranking(candidates, initial);
 
-  it("can detect both violations at once", () => {
-    const violations = checkSectionSequenceCoherence([
-      "proof_showreel", "proof_kpi", "proof_argument",
-      "cta_soft", "cta_direct",
-    ]);
-    expect(violations.length).toBe(2);
-    const rules = violations.map((v) => v.rule);
-    expect(rules).toContain("no_consecutive_ctas");
-    expect(rules).toContain("max_two_proof_sections");
+    const synergies = constraints_applied.filter((c) => c.startsWith("synergy:"));
+    expect(synergies.some((c) => c.includes("digital_product_authority"))).toBe(true);
   });
 });

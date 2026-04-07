@@ -5,13 +5,14 @@
  * No side effects, no storage access.
  */
 
-export type TimeOfDay = "morning" | "working" | "evening";
+export type TimeOfDay = "morning" | "working" | "evening" | "late";
 
 export function getTimeOfDay(): TimeOfDay {
   const hour = new Date().getHours();
   if (hour >= 6 && hour < 9) return "morning";
   if (hour >= 9 && hour < 18) return "working";
-  return "evening";
+  if (hour >= 18 && hour < 23) return "evening";
+  return "late"; // 23:00–06:00
 }
 
 export function isWeekend(): boolean {

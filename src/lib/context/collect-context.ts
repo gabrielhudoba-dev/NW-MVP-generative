@@ -17,6 +17,8 @@ export interface WeatherContext {
   city: string | null;
 }
 
+export type GeoRegion = "eu" | "us" | "uk" | "other" | "unknown";
+
 export interface VisitorContext {
   timeOfDay: TimeOfDay;
   isWeekend: boolean;
@@ -24,8 +26,19 @@ export interface VisitorContext {
   locale: string;
   language: string;
   country: string | null;
+  geo_region: GeoRegion;
   weather: WeatherContext;
   acquisition: AcquisitionContext;
+  /** 0–1 scroll depth at time of decision (updated live) */
+  scroll_depth: number;
+  /** Seconds on page at time of decision (updated live) */
+  time_on_page_sec: number;
+  /** Pages viewed in this session */
+  pages_seen_session: number;
+  /** Case study views in this session */
+  case_study_views_session: number;
+  /** Booking page views in this session */
+  booking_page_views_session: number;
 }
 
 // ─── Storage ────────────────────────────────────────────────
@@ -61,6 +74,21 @@ export function collectContext(): VisitorContext {
     }
   }
 
+  // ── Session counters (sessionStorage) ──
+  let pages_seen_session = 1;
+  let case_study_views_session = 0;
+  let booking_page_views_session = 0;
+  if (typeof window !== "undefined") {
+    try {
+      pages_seen_session = parseInt(sessionStorage.getItem("nw_pages") ?? "0", 10) + 1;
+      sessionStorage.setItem("nw_pages", String(pages_seen_session));
+      case_study_views_session = parseInt(sessionStorage.getItem("nw_case_study_views") ?? "0", 10);
+      booking_page_views_session = parseInt(sessionStorage.getItem("nw_booking_views") ?? "0", 10);
+    } catch {
+      // sessionStorage unavailable
+    }
+  }
+
   return {
     timeOfDay: getTimeOfDay(),
     isWeekend: isWeekend(),
@@ -68,8 +96,14 @@ export function collectContext(): VisitorContext {
     locale: getLocale(),
     language: getLanguage(),
     country: null,
+    geo_region: "unknown",
     weather: { temp: null, condition: null, city: null },
     acquisition,
+    scroll_depth: 0,
+    time_on_page_sec: 0,
+    pages_seen_session,
+    case_study_views_session,
+    booking_page_views_session,
   };
 }
 

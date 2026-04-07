@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ─── PP Object Sans ─── place .woff2 files in /public/fonts/ */
+/* ─── PP Object Sans ─── */
 @font-face {
   font-family: "PP Object Sans";
   src: url("/fonts/PPObjectSans-Regular.woff2") format("woff2");
@@ -23,16 +23,19 @@
   font-display: swap;
 }
 
-/* ─── Design Tokens ─── */
+/* ─── Design Tokens — from Figma: Native Works Design ─── */
+/* Background: #F1FAFF (SVG fill), Ink: #081254 (Figma text/buttons) */
 :root {
-  --surface: #F5F2EC;
-  --surface-raised: #EDEAE4;
-  --surface-dark: #161412;
-  --ink: #161412;
-  --ink-on-dark: #F5F2EC;
-  --muted: #8C8780;
-  --muted-strong: #5C5854;
-  --rule: #DDD9D2;
+  --surface:        #F1FAFF;
+  --surface-raised: #E3F2FB;
+  --surface-alt:    #EAF4FD;
+  --surface-dark:   #081254;
+  --ink:            #081254;
+  --ink-on-dark:    #F1FAFF;
+  --muted:          #5A6490;
+  --muted-strong:   #2E3A6E;
+  --rule:           #C2D6EE;
+  --accent:         #1540D4;
 }
 
 @theme inline {
@@ -44,7 +47,7 @@
 
 body {
   --font-primary: "PP Object Sans", var(--font-space-grotesk), system-ui, -apple-system, sans-serif;
-  background: var(--surface);
+  background: #fff;
   color: var(--ink);
   font-family: var(--font-primary);
   -webkit-font-smoothing: antialiased;
@@ -59,8 +62,8 @@ body {
 /* ─── Dialog ─── */
 @keyframes in {
   from { opacity: 0; transform: scale(0.97) translateY(6px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
 }
-dialog[open] { animation: in 0.2s ease-out; }
+dialog[open]   { animation: in 0.2s ease-out; }
 dialog::backdrop { animation: in 0.12s ease-out; }
 dialog { border: none; outline: none; }

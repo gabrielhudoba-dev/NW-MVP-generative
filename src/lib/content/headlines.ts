@@ -2,29 +2,24 @@ import type { HeadlineOption } from "./content-types";
 
 export const HEADLINES: HeadlineOption[] = [
   {
-    id: "headline_problem_a",
+    id: "problem_authority",
     category: "problem",
     text: "Your product is growing. Clarity is breaking.",
   },
   {
-    id: "headline_problem_b",
-    category: "problem",
-    text: "Growth is not the problem. Loss of clarity is.",
+    id: "clarity_speed",
+    category: "action",
+    text: "Your product grew. Your clarity didn't.",
   },
   {
-    id: "headline_authority_a",
+    id: "digital_product_authority",
     category: "authority",
     text: "We define how digital products should work.",
   },
   {
-    id: "headline_authority_b",
+    id: "quality_under_change",
     category: "authority",
-    text: "Clarity, structure, and decisions that hold at scale.",
-  },
-  {
-    id: "headline_action_a",
-    category: "action",
-    text: "See where your product starts to break.",
+    text: "Quality that holds as your product changes.",
   },
 ];
 

@@ -12,17 +12,17 @@ import {
   detectDevice,
   NW_EVENTS,
   buildTrackingContext,
-  buildHeroVariantPayload,
-  buildSectionSequencePayload,
+  buildExposurePayload,
 } from "@/lib/analytics";
 import type { DeviceContext } from "@/lib/analytics/device";
-import { runPageDecisionFast, runPageDecision } from "@/lib/decision/engine";
+import { runPageDecision } from "@/lib/decision/engine";
 import type { PageDecision } from "@/lib/decision/types";
+import { updatePosterior, REWARD_WEIGHTS } from "@/lib/learning/posterior";
 import { PERSONAS_MAP, type PersonaPreset } from "@/lib/personas/presets";
 import { Hero } from "./hero/Hero";
 import { SectionRenderer } from "./sections/SectionRenderer";
 import { CalEmbed } from "./BookingModal";
-import { DebugPanel } from "./debug/DebugPanel";
+import { DebugFullView } from "./debug/DebugFullView";
 import { PersonaSwitcher } from "./debug/PersonaSwitcher";
 
 function useDebugMode() {
@@ -38,15 +38,11 @@ function usePersonaMode() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const p = params.get("persona");
-    if (p !== null) {
-      // ?persona or ?persona=A — default to showing switcher with initial persona
-      setPersonaId(p || null);
-    }
+    if (p !== null) setPersonaId(p || null);
   }, []);
   return [personaId, setPersonaId] as const;
 }
 
-/** Whether the URL has ?persona (with or without value) */
 function usePersonaEnabled() {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
@@ -60,45 +56,57 @@ function usePersonaEnabled() {
  * resolved content to dumb renderer components.
  *
  * This is the only component with decision logic.
- * All child components are pure renderers.
+ * Decision engine is synchronous — no async AI calls.
  */
 export function PageOrchestrator() {
   const heroRef = useRef<HTMLDivElement>(null);
   const [ctx, setCtx] = useState<VisitorContext | null>(null);
   const [device, setDevice] = useState<DeviceContext | null>(null);
   const [decision, setDecision] = useState<PageDecision | null>(null);
-  const activeSnapshotRef = useRef<string | null>(null);
+  const decisionRef = useRef<PageDecision | null>(null);
   const showDebug = useDebugMode();
   const personaEnabled = usePersonaEnabled();
   const [personaId, setPersonaId] = usePersonaMode();
 
-  // ── Persona switch handler ──
+  // ── Posterior update on learning events ──────────────────────
+  const handleLearningEvent = useCallback((eventKey: string) => {
+    const d = decisionRef.current;
+    if (!d) return;
+    const reward = REWARD_WEIGHTS[eventKey];
+    if (!reward) return;
+
+    updatePosterior("hero",             d.hero_variant,         reward);
+    updatePosterior("description",      d.description_variant,  reward);
+    updatePosterior("proof",            d.proof_variant,        reward);
+    updatePosterior("cta",              d.cta_variant,          reward);
+    updatePosterior("section_sequence", d.section_sequence_id,  reward);
+  }, []);
+
+  // ── Persona switch handler ────────────────────────────────────
   const handlePersonaChange = useCallback((persona: PersonaPreset | null) => {
     if (!persona) {
       setPersonaId(null);
-      // Re-run with real context
       const realCtx = collectContext();
       const realDev = detectDevice();
       setCtx(realCtx);
       setDevice(realDev);
-      const instant = runPageDecisionFast(realCtx, realDev);
-      activeSnapshotRef.current = instant.snapshot_id;
-      setDecision(instant);
+      const d = runPageDecision(realCtx, realDev);
+      decisionRef.current = d;
+      setDecision(d);
       return;
     }
     setPersonaId(persona.id);
     setCtx(persona.ctx);
     setDevice(persona.device);
-    const instant = runPageDecisionFast(persona.ctx, persona.device);
-    activeSnapshotRef.current = instant.snapshot_id;
-    setDecision(instant);
+    const d = runPageDecision(persona.ctx, persona.device);
+    decisionRef.current = d;
+    setDecision(d);
   }, [setPersonaId]);
 
-  // ── Decision pipeline ──
+  // ── Main decision pipeline ────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
-    // If URL has ?persona=X, use that preset instead of real detection
     let detected: VisitorContext;
     let dev: DeviceContext;
 
@@ -113,77 +121,45 @@ export function PageOrchestrator() {
 
     setCtx(detected);
     setDevice(dev);
-
     markHeroMount();
 
-    // Skip tracking in persona mode
+    // Synchronous decision (0ms)
+    const d = runPageDecision(detected, dev);
+    decisionRef.current = d;
+    setDecision(d);
+
     if (!personaEnabled) {
       trackOnce(NW_EVENTS.HERO_SEEN);
-      if (detected.isReturning) {
-        trackOnce(NW_EVENTS.RETURN_VISITOR_DETECTED);
-      }
-    }
+      if (detected.isReturning) trackOnce(NW_EVENTS.RETURN_VISITOR_DETECTED);
 
-    // Step 1: INSTANT deterministic
-    const instant = runPageDecisionFast(detected, dev);
-    activeSnapshotRef.current = instant.snapshot_id;
-    setDecision(instant);
+      // Exposure event (primary personalization tracking)
+      track(NW_EVENTS.PERSONALIZED_PAGE_SEEN, buildExposurePayload(detected, d));
 
-    if (!personaEnabled) {
-      // Track state derived
+      // State + variant tracking
       track(NW_EVENTS.HERO_STATE_DERIVED, {
-        state_key: instant.hero.state_key,
-        snapshot_id: instant.snapshot_id,
-        ...instant.hero.state_vector,
+        state_key: d.state_key,
+        snapshot_id: d.snapshot_id,
+        ...d.state,
       });
-
-      // Track hero variant selected
-      track(NW_EVENTS.HERO_VARIANT_SELECTED, buildHeroVariantPayload(instant));
+      track(NW_EVENTS.HERO_VARIANT_SELECTED, {
+        hero_variant: d.hero_variant,
+        description_variant: d.description_variant,
+        proof_variant: d.proof_variant,
+        cta_variant: d.cta_variant,
+        decision_mode: d.decision_mode,
+        epsilon_value: d.epsilon_value,
+        snapshot_id: d.snapshot_id,
+      });
       trackOnce(NW_EVENTS.HERO_VARIANT_SEEN);
-
-      // Track section sequence
-      track(NW_EVENTS.SECTION_SEQUENCE_SELECTED, buildSectionSequencePayload(instant));
-
-      // Set shared tracking context
-      setTrackContext(buildTrackingContext(detected, instant));
-    }
-
-    // Step 2: Async AI upgrade — skip in persona mode (deterministic preview only)
-    if (!personaEnabled) {
-      const currentSnapshotId = instant.snapshot_id;
-
-      runPageDecision(detected, dev, currentSnapshotId).then((aiDecision) => {
-        if (cancelled) return;
-        if (activeSnapshotRef.current !== currentSnapshotId) return;
-
-        const heroChanged = aiDecision.hero.selection_method === "ai";
-        const sectionsChanged = aiDecision.sections.selection_method === "ai";
-
-        if (heroChanged || sectionsChanged) {
-          setDecision(aiDecision);
-          setTrackContext(buildTrackingContext(detected, aiDecision));
-
-          if (heroChanged) {
-            track(NW_EVENTS.HERO_AI_SCORING_COMPLETED, {
-              selection_method: "ai",
-              snapshot_id: aiDecision.snapshot_id,
-              scoring_model: aiDecision.hero.scoring?.model,
-              scoring_latency_ms: aiDecision.hero.scoring?.latency_ms,
-            });
-            track(NW_EVENTS.HERO_VARIANT_SELECTED, buildHeroVariantPayload(aiDecision));
-          }
-
-          if (sectionsChanged) {
-            track(NW_EVENTS.SECTION_AI_SCORING_COMPLETED, {
-              selection_method: "ai",
-              snapshot_id: aiDecision.snapshot_id,
-            });
-            track(NW_EVENTS.SECTION_SEQUENCE_SELECTED, buildSectionSequencePayload(aiDecision));
-          }
-        }
+      track(NW_EVENTS.SECTION_SEQUENCE_SELECTED, {
+        section_sequence_id: d.section_sequence_id,
+        section_ids: d.sections.join(","),
+        snapshot_id: d.snapshot_id,
       });
 
-      // Weather (display-only)
+      setTrackContext(buildTrackingContext(detected, d));
+
+      // Weather (display-only, non-blocking)
       fetchWeather().then((weather) => {
         if (cancelled) return;
         setCtx((prev) => (prev ? { ...prev, weather } : prev));
@@ -193,41 +169,59 @@ export function PageOrchestrator() {
       const bounceTimer = setTimeout(() => {
         trackOnce(NW_EVENTS.SESSION_BOUNCED_FROM_HERO);
       }, 10_000);
-
       const cancelBounce = () => clearTimeout(bounceTimer);
       window.addEventListener("scroll", cancelBounce, { once: true });
       window.addEventListener("click", cancelBounce, { once: true });
+
+      // 45s engagement timer
+      const engagementTimer = setTimeout(() => {
+        track(NW_EVENTS.TIME_ENGAGED_45S);
+        handleLearningEvent("time_engaged_45s");
+      }, 45_000);
+
+      return () => {
+        cancelled = true;
+        clearTimeout(bounceTimer);
+        clearTimeout(engagementTimer);
+      };
     }
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Scroll tracking
+  // ── Scroll tracking ───────────────────────────────────────────
   useEffect(() => {
     const el = heroRef.current;
     if (!el || !decision) return;
     return observeScrollBelowHero(el);
   }, [decision]);
 
+  // ── CTA click handlers ────────────────────────────────────────
   const handleHeroCtaClick = useCallback(() => {
     if (!decision) return;
     const elapsed = getTimeSinceHeroMount();
     track(NW_EVENTS.PRIMARY_CTA_CLICKED, {
-      cta_label: decision.hero.content.cta.label,
+      cta_label: decision.content.cta.label,
+      cta_variant: decision.cta_variant,
       time_to_primary_cta_click_ms: elapsed,
     });
     if (elapsed !== null) {
       track(NW_EVENTS.TIME_TO_CTA_RECORDED, { time_to_primary_cta_click_ms: elapsed });
     }
-  }, [decision]);
+    handleLearningEvent("cta_clicked");
+  }, [decision, handleLearningEvent]);
 
   const handleSectionCtaClick = useCallback((sectionId: string) => {
     track(NW_EVENTS.PRIMARY_CTA_CLICKED, {
       cta_source: sectionId,
       cta_label: "section_cta",
     });
-  }, []);
+    handleLearningEvent("cta_clicked");
+  }, [handleLearningEvent]);
+
+  // ── Debug view ────────────────────────────────────────────────
+  if (showDebug) return <DebugFullView />;
 
   if (!decision || !ctx || !device) return null;
 
@@ -235,23 +229,19 @@ export function PageOrchestrator() {
     <>
       <div ref={heroRef}>
         <Hero
-          content={decision.hero.content}
-          stateKey={decision.hero.state_key}
-          selectionMethod={decision.hero.selection_method}
+          content={decision.content}
+          stateKey={decision.state_key}
+          selectionMethod={decision.decision_mode}
           onCtaClick={handleHeroCtaClick}
         />
       </div>
 
       <SectionRenderer
-        sectionIds={decision.sections.section_ids}
+        sectionIds={decision.sections}
         onCtaClick={handleSectionCtaClick}
       />
 
       <CalEmbed />
-
-      {showDebug && (
-        <DebugPanel decision={decision} ctx={ctx} device={device} />
-      )}
 
       {personaEnabled && (
         <PersonaSwitcher

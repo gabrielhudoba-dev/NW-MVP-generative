@@ -1,0 +1,7 @@
+Finding,Category,Impact,Recommendation
+Soft CTA and diagnostic CTA never win,Dead content,No visitor ever sees these variants,Remove or redesign their scoring rules
+Mobile proof is always none,Over-aggressive guardrail,Mobile visitors never see social proof,Consider allowing argument proof on mobile
+Headline _b variants never win,Dead content,_b penalty (-0.02) ensures _a always wins,Either remove _b variants or remove the penalty
+Low energy = always no proof,Narrow funnel,Evening/weekend/mobile visitors get minimal persuasion,Consider lightweight proof for low energy
+Only 8 unique hero outcomes exist,Over-simplified,36 state keys produce only 8 distinct pages,Either simplify to 8 explicit presets or add more differentiation
+Description has only 2 outcomes,Under-leveraged slot,medium_a or short_a — no further personalization,Consider adding more description variants

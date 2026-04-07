@@ -1,0 +1,16 @@
+Intent,Override,Priority,Section 1,Section 2,Section 3,Section 4,Section 5
+exploring,default,5,shift,consequence,position_light,cta_soft,
+exploring,returning,1,consequence,position_light,cta_soft,,
+exploring,low_energy,2,shift,consequence,cta_soft,,
+exploring,low_trust,3,shift,consequence,position_light,proof_showreel,cta_soft
+exploring,high_trust,4,consequence,position_light,cta_soft,,
+evaluating,default,5,position,market_shift,working_model,intervention_logic,cta_direct
+evaluating,returning,1,position,working_model,business_model,cta_direct,
+evaluating,low_energy,2,position,working_model,cta_direct,,
+evaluating,low_trust,3,position,market_shift,proof_argument,cta_soft,
+evaluating,high_trust,4,position,working_model,intervention_logic,proof_kpi,cta_direct
+ready,default,5,business_model,cta_direct,proof_optional,,
+ready,returning,1,business_model,cta_direct,,,
+ready,low_energy,2,business_model,cta_direct,,,
+ready,low_trust,3,proof_showreel,business_model,cta_direct,,
+ready,high_trust,4,business_model,proof_kpi,cta_direct,,

@@ -3,6 +3,7 @@
 import type { PageDecision } from "@/lib/decision/types";
 import type { VisitorContext } from "@/lib/context/collect-context";
 import type { DeviceContext } from "@/lib/analytics/device";
+import type { SlotScore } from "@/lib/decision/types";
 
 interface DebugPanelProps {
   decision: PageDecision;
@@ -14,31 +15,30 @@ interface DebugPanelProps {
  * Debug panel — shown when ?debug=true.
  *
  * Displays full decision chain:
- * - Context, state vector, allowed options, scores, selections, sections.
+ * state vector, variant selections, scores, sections, constraints.
  */
 export function DebugPanel({ decision, ctx, device }: DebugPanelProps) {
-  const { hero, sections } = decision;
-
   return (
     <div className="fixed right-4 top-20 z-50 max-h-[80vh] w-72 overflow-y-auto rounded-lg border border-neutral-200 bg-white/95 px-4 py-3 text-xs text-neutral-500 shadow-lg backdrop-blur-sm">
       {/* Context */}
       <Section title="Context">
-        <Row label="state" value={hero.state_key} />
+        <Row label="state" value={decision.state_key} />
+        <Row label="mode" value={decision.decision_mode} />
+        <Row label="ε" value={decision.epsilon_value.toFixed(2)} />
         <Row label="timeOfDay" value={ctx.timeOfDay} />
         <Row label="weekend" value={String(ctx.isWeekend)} />
         <Row label="returning" value={String(ctx.isReturning)} />
         <Row label="locale" value={ctx.locale} />
-        <Row label="weather" value={ctx.weather.condition ?? "loading\u2026"} />
-        <Row label="temp" value={ctx.weather.temp !== null ? `${ctx.weather.temp}\u00B0C` : "\u2014"} />
-        <Row label="city" value={ctx.weather.city ?? "\u2014"} />
         <Row label="device" value={device.device_type} />
         <Row label="referrer" value={ctx.acquisition.referrer_group} />
-        <Row label="utm_source" value={ctx.acquisition.utm_source ?? "\u2014"} />
+        <Row label="utm_source" value={ctx.acquisition.utm_source ?? "—"} />
+        <Row label="weather" value={ctx.weather.condition ?? "loading…"} />
+        <Row label="temp" value={ctx.weather.temp !== null ? `${ctx.weather.temp}°C` : "—"} />
       </Section>
 
       {/* State vector */}
       <Section title="State vector">
-        {Object.entries(hero.state_vector).map(([key, val]) => (
+        {Object.entries(decision.state).map(([key, val]) => (
           <li key={key} className="flex items-center gap-1.5">
             <span className="text-neutral-300">{key.replace("_score", "")}:</span>
             <div className="h-1.5 flex-1 rounded-full bg-neutral-100">
@@ -52,72 +52,66 @@ export function DebugPanel({ decision, ctx, device }: DebugPanelProps) {
         ))}
       </Section>
 
-      {/* AI status */}
-      <Section title="AI status">
-        {hero.selection_method === "ai" ? (
-          <p className="text-green-500">active — AI scoring applied</p>
-        ) : (
-          <p className="text-amber-500">{hero.ai_error}</p>
-        )}
+      {/* Variant selections */}
+      <Section title="Selected variants">
+        <Row label="hero" value={decision.hero_variant} />
+        <Row label="description" value={decision.description_variant} />
+        <Row label="proof" value={decision.proof_variant} />
+        <Row label="cta" value={decision.cta_variant} />
+        <Row label="sequence" value={decision.section_sequence_id} />
       </Section>
 
-      {/* Rules */}
-      <Section title={`Rules (${hero.rules_applied.length})`}>
-        {hero.rules_applied.length > 0 ? (
-          hero.rules_applied.map((rule) => (
-            <li key={rule} className="flex items-center gap-1.5">
-              <span className="text-amber-400">{"\u25CF"}</span>
-              <span>{rule}</span>
-            </li>
-          ))
-        ) : (
-          <p className="text-neutral-300">none</p>
-        )}
-      </Section>
-
-      {/* Hero selected */}
-      <Section title="Hero selected">
-        {Object.entries(hero.selected_ids).map(([slot, id]) => (
-          <Row key={slot} label={slot} value={id} />
-        ))}
-      </Section>
-
-      {/* Scoring details */}
-      {hero.scoring && (
-        <Section title={`Scoring (${hero.scoring.model} \u00B7 ${hero.scoring.latency_ms}ms)`}>
-          {Object.entries(hero.scoring.scores)
-            .flatMap(([, slotScores]) => slotScores)
+      {/* Scores */}
+      {Object.keys(decision.scores).length > 0 && (
+        <Section title="Scores">
+          {(Object.entries(decision.scores) as [string, SlotScore[]][])
+            .flatMap(([slot, slotScores]) =>
+              slotScores.map((s) => ({ ...s, slot }))
+            )
             .sort((a, b) => b.score - a.score)
             .map((s) => {
-              const isSelected = Object.values(hero.selected_ids).includes(s.id);
+              const isSelected = [
+                decision.hero_variant,
+                decision.description_variant,
+                decision.proof_variant,
+                decision.cta_variant,
+                decision.section_sequence_id,
+              ].includes(s.id);
               return (
-                <li key={s.id} className="flex items-center gap-1">
+                <li key={`${s.slot}:${s.id}`} className="flex items-center gap-1">
                   <span className={isSelected ? "text-green-400" : "text-neutral-300"}>
-                    {isSelected ? "\u25CF" : "\u25CB"}
+                    {isSelected ? "●" : "○"}
                   </span>
-                  <span className={isSelected ? "text-neutral-500" : "text-neutral-300"}>
+                  <span className={`truncate ${isSelected ? "text-neutral-500" : "text-neutral-300"}`}>
                     {s.id}
                   </span>
-                  <span className="ml-auto tabular-nums">{s.score.toFixed(2)}</span>
+                  <span className="ml-auto shrink-0 tabular-nums">{s.score.toFixed(2)}</span>
                 </li>
               );
             })}
         </Section>
       )}
 
+      {/* Constraints */}
+      {decision.constraints_applied.length > 0 && (
+        <Section title={`Constraints (${decision.constraints_applied.length})`}>
+          {decision.constraints_applied.map((c) => (
+            <li key={c} className="flex items-center gap-1.5">
+              <span className="text-amber-400">●</span>
+              <span>{c}</span>
+            </li>
+          ))}
+        </Section>
+      )}
+
       {/* Section sequence */}
-      <Section title={`Sections (${sections.section_ids.length})`}>
-        {sections.section_ids.map((id, i) => (
+      <Section title={`Sections (${decision.sections.length})`}>
+        {decision.sections.map((id, i) => (
           <li key={id} className="flex items-center gap-1.5">
             <span className="text-neutral-300">{i + 1}.</span>
             <span>{id}</span>
           </li>
         ))}
-        <p className="mt-1 text-neutral-300">
-          method: <span className={
-            sections.selection_method === "ai" ? "text-green-500" : "text-neutral-500"
-          }>{sections.selection_method}</span>
-        </p>
       </Section>
     </div>
   );

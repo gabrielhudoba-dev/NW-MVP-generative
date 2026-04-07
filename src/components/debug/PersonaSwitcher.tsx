@@ -77,26 +77,26 @@ export function PersonaSwitcher({ activeId, decision, onChange }: PersonaSwitche
             <>
               {/* State */}
               <SectionLabel>State</SectionLabel>
-              <Row label="key" value={decision.hero.state_key} highlight />
-              <Row label="method" value={decision.hero.selection_method} />
-              {decision.hero.rules_applied.length > 0 && (
+              <Row label="key" value={decision.state_key} highlight />
+              <Row label="mode" value={decision.decision_mode} />
+              {decision.constraints_applied.length > 0 && (
                 <Row
-                  label="guardrails"
-                  value={decision.hero.rules_applied.join(", ")}
+                  label="constraints"
+                  value={decision.constraints_applied.join(", ")}
                   highlight
                 />
               )}
 
               {/* Hero */}
               <SectionLabel>Hero</SectionLabel>
-              <Row label="headline" value={shortId(decision.hero.selected_ids.headline)} />
-              <Row label="desc" value={shortId(decision.hero.selected_ids.description)} />
-              <Row label="cta" value={shortId(decision.hero.selected_ids.cta)} />
-              <Row label="proof" value={shortId(decision.hero.selected_ids.proof)} />
+              <Row label="headline" value={decision.hero_variant} />
+              <Row label="desc" value={decision.description_variant} />
+              <Row label="cta" value={decision.cta_variant} />
+              <Row label="proof" value={decision.proof_variant} />
 
               {/* Sections */}
               <SectionLabel>Sections</SectionLabel>
-              {decision.sections.section_ids.map((id, i) => (
+              {decision.sections.map((id, i) => (
                 <Row key={id} label={String(i + 1)} value={id} />
               ))}
             </>
@@ -132,12 +132,4 @@ function Row({ label, value, highlight }: { label: string; value: string; highli
       </span>
     </div>
   );
-}
-
-function shortId(id: string): string {
-  return id
-    .replace("headline_", "")
-    .replace("desc_", "")
-    .replace("cta_", "")
-    .replace("proof_", "");
 }

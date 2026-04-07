@@ -1,0 +1,16 @@
+Signal,Condition,intent,trust,energy,speed,attention,familiarity
+baseline,(all visitors),0.30,0.30,0.50,0.40,0.50,0.00
+returning,isReturning = true,+0.15,+0.15,0,+0.10,0,+0.50
+referrer,direct,+0.10,+0.20,0,0,0,+0.20
+referrer,referral,0,+0.15,0,0,0,0
+referrer,social,0,-0.05,0,0,-0.10,0
+referrer,search,+0.15,0,+0.10,0,+0.10,0
+referrer,email,+0.10,+0.10,0,0,0,0
+utm_source,linkedin,0,+0.05,0,0,0,0
+utm_medium,cpc,+0.15,0,0,+0.10,0,0
+time_of_day,working,0,0,+0.15,+0.05,+0.10,0
+time_of_day,morning,0,0,+0.10,0,+0.05,0
+time_of_day,evening,0,0,-0.15,-0.10,-0.10,0
+weekend,true,0,0,-0.10,-0.10,-0.05,0
+device,mobile,0,0,-0.10,+0.05,-0.10,0
+device,desktop,0,0,+0.05,0,+0.10,0

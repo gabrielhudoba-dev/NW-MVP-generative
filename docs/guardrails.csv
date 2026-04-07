@@ -1,0 +1,4 @@
+Rule ID,Condition,Slot,Effect
+mobile_force_short_desc,device = mobile,description,medium descriptions penalized (x0.4) / short boosted to 0.7
+mobile_avoid_heavy_proof,device = mobile,proof,none boosted to 0.7 / showreel x0.5 / showreel_kpi x0.4 / kpi x0.6 / argument unchanged
+low_energy_no_proof,energy_score < 0.35,proof,none boosted to 0.85 / all others x0.5

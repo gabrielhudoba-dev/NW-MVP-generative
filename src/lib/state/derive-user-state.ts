@@ -2,7 +2,7 @@
  * Deterministic user state derivation.
  *
  * Transforms raw context signals into a continuous 0–1 state vector.
- * No AI — pure logic. This is the foundation for all downstream decisions.
+ * No AI — pure additive math from visitor signals.
  */
 
 import type { UserStateVector } from "./state-types";
@@ -13,86 +13,102 @@ export function deriveUserState(
   ctx: VisitorContext,
   device: DeviceContext
 ): UserStateVector {
-  let intent = 0.3;
-  let trust = 0.3;
-  let energy = 0.5;
-  let decision_speed = 0.4;
-  let attention = 0.5;
-  let familiarity = 0.0;
+  let intent = 0.30;
+  let trust = 0.30;
+  let energy = 0.50;
+  let attention = 0.50;
+  let familiarity = 0.00;
 
-  // ── Returning visitor signals ──
+  // ── Returning visitor ──
   if (ctx.isReturning) {
-    familiarity += 0.5;
-    trust += 0.15;
-    intent += 0.15;
-    decision_speed += 0.1;
+    intent += 0.12;
+    trust += 0.12;
+    familiarity += 0.45;
   }
 
-  // ── Acquisition signals ──
+  // ── Referrer source ──
   const ref = ctx.acquisition.referrer_group;
   if (ref === "direct") {
-    trust += 0.2;
-    familiarity += 0.2;
-    intent += 0.1;
+    intent += 0.08;
+    trust += 0.16;
+    familiarity += 0.18;
   } else if (ref === "referral") {
-    trust += 0.15;
+    trust += 0.14;
   } else if (ref === "social") {
-    trust -= 0.05;
-    attention -= 0.1;
+    trust -= 0.04;
+    attention -= 0.06;
   } else if (ref === "search") {
-    intent += 0.15;
-    energy += 0.1;
-    attention += 0.1;
+    intent += 0.14;
+    energy += 0.08;
+    attention += 0.08;
   } else if (ref === "email") {
-    trust += 0.1;
-    intent += 0.1;
+    intent += 0.10;
+    trust += 0.08;
+    familiarity += 0.12;
   }
 
   // ── UTM signals ──
   if (ctx.acquisition.utm_source === "linkedin") {
-    trust += 0.05;
+    trust += 0.04;
   }
   if (ctx.acquisition.utm_medium === "cpc") {
-    intent += 0.15;
-    decision_speed += 0.1;
+    intent += 0.10;
+    attention += 0.06;
   }
 
   // ── Time of day ──
   if (ctx.timeOfDay === "working") {
-    energy += 0.15;
-    attention += 0.1;
-    decision_speed += 0.05;
-  } else if (ctx.timeOfDay === "morning") {
-    energy += 0.1;
-    attention += 0.05;
+    energy += 0.10;
+    attention += 0.08;
   } else if (ctx.timeOfDay === "evening") {
+    energy -= 0.08;
+    attention -= 0.04;
+  } else if (ctx.timeOfDay === "late") {
     energy -= 0.15;
-    attention -= 0.1;
-    decision_speed -= 0.1;
+    attention -= 0.10;
   }
 
   // ── Weekend ──
   if (ctx.isWeekend) {
-    energy -= 0.1;
-    decision_speed -= 0.1;
-    attention -= 0.05;
+    intent -= 0.05;
+    energy -= 0.04;
   }
 
-  // ── Device signals ──
+  // ── Behavioral signals (from session) ──
+  if (ctx.pages_seen_session >= 2) {
+    trust += 0.08;
+    familiarity += 0.10;
+  }
+  if (ctx.case_study_views_session >= 1) {
+    intent += 0.12;
+    trust += 0.10;
+  }
+  if (ctx.booking_page_views_session >= 1) {
+    intent += 0.18;
+    trust += 0.05;
+  }
+  if (ctx.scroll_depth >= 0.50) {
+    attention += 0.10;
+    intent += 0.06;
+  }
+  if (ctx.time_on_page_sec >= 45) {
+    attention += 0.10;
+    trust += 0.08;
+  }
+
+  // ── Device ──
   if (device.device_type === "mobile") {
-    energy -= 0.1;
-    attention -= 0.1;
-    decision_speed += 0.05;
+    energy -= 0.10;
+    attention -= 0.10;
   } else if (device.device_type === "desktop") {
     energy += 0.05;
-    attention += 0.1;
+    attention += 0.10;
   }
 
   return {
     intent_score: clamp(intent),
     trust_score: clamp(trust),
     energy_score: clamp(energy),
-    decision_speed_score: clamp(decision_speed),
     attention_score: clamp(attention),
     familiarity_score: clamp(familiarity),
   };
