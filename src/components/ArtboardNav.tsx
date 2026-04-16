@@ -245,6 +245,7 @@ export function ArtboardNav() {
   const [pan, setPan]         = useState({ x: 0, y: 0 });
   const [animate, setAnimate] = useState(false);
   const [dragging, setDrag]   = useState(false);
+  const [zoomTarget, setZoomTarget] = useState<string | null>(null);
   const zoomingRef = useRef(false);
   const drag = useRef<{
     on: boolean; moved: boolean;
@@ -262,9 +263,11 @@ export function ArtboardNav() {
     [totalW, totalH],
   );
 
+  /* fullZoom = exact 1:1 scale so iframe content matches the real page pixel-
+     perfectly (sc × fullZoom = 1).  Using vw/aw guarantees that. */
   const fullZoom = useCallback(
-    () => Math.max(window.innerWidth / aw, window.innerHeight / ah),
-    [aw, ah],
+    () => window.innerWidth / aw,
+    [aw],
   );
 
   /* ── OPEN → zoom out ── */
@@ -279,14 +282,21 @@ export function ArtboardNav() {
     if (idx < 0) { setAnimate(false); setZoom(REST_ZOOM); setPan({ x: 0, y: 0 }); return; }
 
     const card = c[idx];
-    const cx = card.x + aw / 2, cy = card.y + ah / 2;
+    const cx = card.x + aw / 2;
     const S = fullZoom();
+    const vh = window.innerHeight;
 
+    /* Start at 1:1 with card top aligned to viewport top — matches the
+       actual page the user is looking at, so there's zero visible jump. */
     zoomingRef.current = true;
     setAnimate(false);
     setZoom(S);
-    setPan(panForCard(cx, cy, S));
+    setPan({
+      x: S * (totalW / 2 - cx),
+      y: S * (totalH / 2 - card.y) - vh / 2,
+    });
 
+    const cy = card.y + ah / 2;
     const endPan = panForCard(cx, cy, REST_ZOOM);
     requestAnimationFrame(() => requestAnimationFrame(() => {
       setAnimate(true);
@@ -305,6 +315,7 @@ export function ArtboardNav() {
       const vh = window.innerHeight;
 
       zoomingRef.current = true;
+      setZoomTarget(href);
       setNavigating(true);
       setAnimate(true);
       setZoom(S);
@@ -318,6 +329,7 @@ export function ArtboardNav() {
         setTimeout(() => {
           setAnimate(false);
           zoomingRef.current = false;
+          setZoomTarget(null);
           closeRef.current();
         }, 200);
       }, 550);
@@ -419,10 +431,10 @@ export function ArtboardNav() {
               position: "absolute",
               left: card.x, top: card.y,
               width: aw, height: ah,
-              overflow: "hidden",
+              overflow: card.href === zoomTarget ? "visible" : "hidden",
               cursor: "pointer",
               background: "#fff",
-              boxShadow: "0 2px 16px rgba(0,0,0,.32)",
+              boxShadow: card.href === zoomTarget ? "none" : "0 2px 16px rgba(0,0,0,.32)",
             }}
           >
             <CardFrame
