@@ -4,11 +4,7 @@ import Link from "next/link";
 import { NwLogo } from "./NwLogo";
 import { useMenu } from "./MenuProvider";
 
-interface NavProps {
-  variant?: "transparent" | "solid";
-}
-
-export function Nav({ variant = "transparent" }: NavProps) {
+export function Nav() {
   const { open, navigating, toggle } = useMenu();
 
   /* Hide nav chrome instantly when zoom-in navigation starts */
@@ -27,9 +23,6 @@ export function Nav({ variant = "transparent" }: NavProps) {
         opacity:  hidden ? 0 : 1,
         transition: "opacity 0.15s ease",
         pointerEvents: hidden ? "none" : undefined,
-        ...(variant === "solid" && !open
-          ? { background: "#fff" }
-          : {}),
       }}
     >
       {/* Logo — always visible, switches to white when menu open */}

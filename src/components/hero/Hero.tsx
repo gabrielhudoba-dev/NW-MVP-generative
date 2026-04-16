@@ -19,7 +19,7 @@ export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroPro
       data-method={selectionMethod}
     >
       {/* ── Nav ── */}
-      <Nav variant="transparent" />
+      <Nav />
 
       {/* ── Two-column content ── */}
       <div className="flex flex-1 flex-col justify-start px-5 pb-12 pt-[8vh] sm:px-10 lg:px-14 lg:pb-16 lg:pt-[10vh] xl:px-[52px]">
@@ -32,7 +32,7 @@ export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroPro
               style={{
                 fontFamily:    "var(--font-display)",
                 color:         "var(--ink)",
-                fontSize:      "var(--text-hero)",
+                fontSize:      "var(--text-h1)",
                 lineHeight:    "var(--heading-leading)",
                 fontWeight:    "var(--heading-weight)",
                 letterSpacing: "var(--heading-tracking)",
@@ -43,7 +43,7 @@ export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroPro
 
             <p
               className="mb-9 max-w-[32rem] text-[1.0625rem] leading-[1.6] sm:mb-10 sm:text-[1.125rem]"
-              style={{ color: "var(--ink)", fontWeight: 500 }}
+              style={{ color: "var(--ink)", fontWeight: "var(--body-weight)" }}
             >
               {content.description.text}
             </p>
@@ -55,14 +55,14 @@ export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroPro
                 data-cal-config='{"layout":"month_view","useSlotsViewOnSmallScreen":"true"}'
                 onClick={onCtaClick}
                 className="inline-flex h-12 items-center rounded-full px-8 text-[1.0625rem] font-medium transition-all duration-150 hover:opacity-85 active:scale-[0.97]"
-                style={{ background: "var(--ink)", color: "var(--ink-on-dark)", fontWeight: 500 }}
+                style={{ background: "var(--ink)", color: "var(--ink-on-dark)", fontWeight: "var(--body-weight)" }}
               >
                 {content.cta.label}
               </button>
 
               <button
                 className="inline-flex h-12 items-center rounded-full border px-8 text-[1.0625rem] font-medium transition-all duration-150 hover:opacity-65 active:scale-[0.97]"
-                style={{ borderColor: "var(--ink)", color: "var(--ink)", fontWeight: 500 }}
+                style={{ borderColor: "var(--ink)", color: "var(--ink)", fontWeight: "var(--body-weight)" }}
               >
                 See how we work
               </button>

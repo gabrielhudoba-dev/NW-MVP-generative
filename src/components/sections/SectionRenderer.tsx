@@ -72,7 +72,7 @@ function ContentSection({ section, index }: { section: SectionContent; index: nu
               style={{
                 fontFamily:    "var(--font-display)",
                 color:         "var(--ink)",
-                fontSize:      "var(--text-section)",
+                fontSize:      "var(--text-h2)",
                 fontWeight:    "var(--heading-weight)",
                 lineHeight:    "var(--heading-leading)",
                 letterSpacing: "var(--heading-tracking)",
@@ -126,7 +126,7 @@ function CtaSection({
             className="mb-12 leading-[1.05] tracking-[-0.025em]"
             style={{
               color: "var(--ink-on-dark)",
-              fontSize:      "var(--text-section)",
+              fontSize:      "var(--text-h2)",
               fontWeight:    "var(--heading-weight)",
               lineHeight:    "var(--heading-leading)",
               letterSpacing: "var(--heading-tracking)",
@@ -187,7 +187,7 @@ function ProofSection({ section, index }: { section: SectionContent; index: numb
               style={{
                 fontFamily:    "var(--font-display)",
                 color:         "var(--ink)",
-                fontSize:      "var(--text-section)",
+                fontSize:      "var(--text-h2)",
                 fontWeight:    "var(--heading-weight)",
                 lineHeight:    "var(--heading-leading)",
                 letterSpacing: "var(--heading-tracking)",
@@ -203,7 +203,7 @@ function ProofSection({ section, index }: { section: SectionContent; index: numb
               style={{
                 color: "var(--ink)",
                 fontSize: "clamp(1.0625rem, 1.5vw, 1.25rem)",
-                fontWeight: 500,
+                fontWeight: "var(--body-weight)",
               }}
             >
               {proof.content}
@@ -238,7 +238,7 @@ function BusinessModelSection({ section, index }: { section: SectionContent; ind
               style={{
                 fontFamily:    "var(--font-display)",
                 color:         "var(--ink)",
-                fontSize:      "var(--text-section)",
+                fontSize:      "var(--text-h2)",
                 fontWeight:    "var(--heading-weight)",
                 lineHeight:    "var(--heading-leading)",
                 letterSpacing: "var(--heading-tracking)",
@@ -263,7 +263,7 @@ function BusinessModelSection({ section, index }: { section: SectionContent; ind
                 </span>
                 <span
                   className="text-[1rem] leading-[1.4] tracking-[-0.01em]"
-                  style={{ color: "var(--ink)", fontWeight: 500 }}
+                  style={{ color: "var(--ink)", fontWeight: "var(--body-weight)" }}
                 >
                   {item}
                 </span>

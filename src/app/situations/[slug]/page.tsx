@@ -38,7 +38,7 @@ export default async function SituationDetailPage({
 
   return (
     <>
-      <Nav variant="solid" />
+      <Nav />
       <main style={{ background: "#fff" }}>
 
         {/* ── Header ── */}
@@ -51,19 +51,27 @@ export default async function SituationDetailPage({
             className="inline-flex items-center gap-2 mb-10 text-[0.8125rem] font-medium"
             style={{ color: "var(--muted)" }}
           >
-            ← Situations
+            ← Back
           </Link>
 
-          <h1
-            style={{
+          <h3 className="mb-5" style={{
               fontFamily:    "var(--font-display)",
-              fontSize:      "var(--text-section)",
+              fontSize:      "var(--text-h3)",
+              fontWeight:    "var(--heading-weight)",
+              letterSpacing: "var(--heading-tracking)",
+              lineHeight:    "var(--heading-leading)",
+              color:         "var(--muted-strong)",
+            }}>
+            Situations
+          </h3>
+          <h1 style={{
+              fontFamily:    "var(--font-display)",
+              fontSize:      "var(--text-h1)",
               fontWeight:    "var(--heading-weight)",
               letterSpacing: "var(--heading-tracking)",
               lineHeight:    "var(--heading-leading)",
               color:         "var(--ink)",
-            }}
-          >
+            }}>
             {situation.title}
           </h1>
         </div>

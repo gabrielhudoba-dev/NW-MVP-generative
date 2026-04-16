@@ -63,9 +63,12 @@
   /* Font families */
   --font-display: "Neue Haas Display", system-ui, sans-serif;
 
-  /* Typography — heading scale (shared hero ↔ sections) */
-  --text-hero:      clamp(2.5rem, 5.5vw, 5rem);
-  --text-section:   clamp(2rem, 4vw, 3.5rem);
+  /* Typography — heading scale, ratio 1.618 (Golden Ratio) */
+  --text-h1:        clamp(2rem, 4vw, 4rem);
+  --text-h2:        clamp(1.236rem, 2.472vw, 2.472rem);
+  --text-h3:        clamp(1rem, 1.528vw, 1.528rem);
+  --text-h4:        clamp(0.875rem, 0.944vw, 0.944rem);
+  --text-h5:        clamp(0.75rem, 0.583vw, 0.583rem);
   --text-body-lg:   1.0625rem;
   --text-body:      0.9375rem;
   --text-label:     0.625rem;
@@ -74,6 +77,9 @@
   --heading-weight:   400;
   --heading-leading:  1.05;
   --heading-tracking: -0.01em;
+
+  /* Body style */
+  --body-weight:      400;
 }
 
 @theme inline {

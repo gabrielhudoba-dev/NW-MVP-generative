@@ -5,7 +5,7 @@ import { SITUATIONS } from "@/lib/content/situations";
 export default function SituationsPage() {
   return (
     <>
-      <Nav variant="solid" />
+      <Nav />
       <main style={{ background: "#fff", minHeight: "70vh" }}>
 
         {/* Header */}
@@ -13,25 +13,33 @@ export default function SituationsPage() {
           className="px-5 sm:px-10 lg:px-14 xl:px-[52px] pt-20 pb-16 sm:pt-28 sm:pb-20"
           style={{ borderBottom: "1px solid var(--rule)" }}
         >
-          <p
-            className="mb-5 text-[0.625rem] font-medium uppercase tracking-[0.12em]"
-            style={{ color: "var(--muted)" }}
-          >
-            Situations
-          </p>
           <h1
-            className="max-w-[28rem]"
+            className="mb-5"
             style={{
               fontFamily:    "var(--font-display)",
-              fontSize:      "var(--text-section)",
+              fontSize:      "var(--text-h1)",
               fontWeight:    "var(--heading-weight)",
               letterSpacing: "var(--heading-tracking)",
               lineHeight:    "var(--heading-leading)",
               color:         "var(--ink)",
             }}
           >
-            We work best when there is a specific problem on the table.
+            Situations
           </h1>
+          <h2
+            style={{
+              fontFamily:    "var(--font-display)",
+              fontSize:      "var(--text-h2)",
+              fontWeight:    "var(--heading-weight)",
+              letterSpacing: "var(--heading-tracking)",
+              lineHeight:    "var(--heading-leading)",
+              color:         "var(--muted-strong)",
+              width:         "100%",
+            }}
+          >
+            We work best when there is a specific<br />
+            problem on the table.
+          </h2>
         </div>
 
         {/* List */}
@@ -52,10 +60,10 @@ export default function SituationsPage() {
                 <span
                   style={{
                     fontFamily:    "var(--font-display)",
-                    fontSize:      "clamp(1.25rem, 2.5vw, 1.75rem)",
+                    fontSize:      "var(--text-h3)",
                     fontWeight:    "var(--heading-weight)",
                     letterSpacing: "var(--heading-tracking)",
-                    lineHeight:    1.15,
+                    lineHeight:    "var(--heading-leading)",
                     color:         "var(--ink)",
                   }}
                 >
