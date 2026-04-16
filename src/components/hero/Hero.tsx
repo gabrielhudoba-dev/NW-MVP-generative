@@ -14,7 +14,7 @@ export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroPro
   return (
     <section
       className="relative flex min-h-svh flex-col"
-      style={{ background: "var(--surface)" }}
+      style={{ background: "#fff" }}
       data-state-key={stateKey}
       data-method={selectionMethod}
     >

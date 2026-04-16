@@ -125,6 +125,7 @@ function CtaSection({
           <h2
             className="mb-12 leading-[1.05] tracking-[-0.025em]"
             style={{
+              fontFamily:    "var(--font-display)",
               color: "var(--ink-on-dark)",
               fontSize:      "var(--text-h2)",
               fontWeight:    "var(--heading-weight)",

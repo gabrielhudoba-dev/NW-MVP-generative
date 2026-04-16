@@ -33,7 +33,7 @@
 }
 @font-face {
   font-family: "PP Object Sans";
-  src: url("/fonts/PPObjectSans-Medium.woff2") format("woff2");
+  src: url("/fonts/PPObjectSans-Regular.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -61,7 +61,7 @@
   --accent:         #1540D4;
 
   /* Font families */
-  --font-display: "Neue Haas Display", system-ui, sans-serif;
+  --font-display: "PP Object Sans", system-ui, sans-serif;
 
   /* Typography — heading scale, ratio 1.618 (Golden Ratio) */
   --text-h1:        clamp(2rem, 4vw, 4rem);
@@ -76,7 +76,7 @@
   /* Heading style — same weight/tracking/leading everywhere */
   --heading-weight:   400;
   --heading-leading:  1.05;
-  --heading-tracking: -0.01em;
+  --heading-tracking: -0.02em;
 
   /* Body style */
   --body-weight:      400;
@@ -96,6 +96,14 @@ body {
   font-family: var(--font-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── All headings use display font via tokens ─── */
+h1, h2, h3, h4, h5 {
+  font-family:    var(--font-display);
+  font-weight:    var(--heading-weight);
+  line-height:    var(--heading-leading);
+  letter-spacing: var(--heading-tracking);
 }
 
 ::selection {
