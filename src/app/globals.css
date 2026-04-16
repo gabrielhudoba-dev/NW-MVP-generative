@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/* ─── Neue Haas Display — headlines only ─── */
+@font-face {
+  font-family: "Neue Haas Display";
+  src: url("/fonts/NeueHaasDisplay-Roman.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Neue Haas Display";
+  src: url("/fonts/NeueHaasDisplay-Mediu.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Neue Haas Display";
+  src: url("/fonts/NeueHaasDisplay-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ─── PP Object Sans ─── */
 @font-face {
   font-family: "PP Object Sans";
@@ -24,8 +47,8 @@
 }
 
 /* ─── Design Tokens — from Figma: Native Works Design ─── */
-/* Background: #F1FAFF (SVG fill), Ink: #081254 (Figma text/buttons) */
 :root {
+  /* Color */
   --surface:        #F1FAFF;
   --surface-raised: #E3F2FB;
   --surface-alt:    #EAF4FD;
@@ -36,6 +59,21 @@
   --muted-strong:   #2E3A6E;
   --rule:           #C2D6EE;
   --accent:         #1540D4;
+
+  /* Font families */
+  --font-display: "Neue Haas Display", system-ui, sans-serif;
+
+  /* Typography — heading scale (shared hero ↔ sections) */
+  --text-hero:      clamp(2.5rem, 5.5vw, 5rem);
+  --text-section:   clamp(2rem, 4vw, 3.5rem);
+  --text-body-lg:   1.0625rem;
+  --text-body:      0.9375rem;
+  --text-label:     0.625rem;
+
+  /* Heading style — same weight/tracking/leading everywhere */
+  --heading-weight:   400;
+  --heading-leading:  1.05;
+  --heading-tracking: -0.01em;
 }
 
 @theme inline {

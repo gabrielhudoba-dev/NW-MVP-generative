@@ -1,8 +1,7 @@
 "use client";
 
 import type { HeroContent } from "@/lib/content/content-types";
-import { HeroCta } from "./HeroCta";
-import { HeroProofWidget } from "./HeroProofWidget";
+import { Nav } from "../Nav";
 
 interface HeroProps {
   content: HeroContent;
@@ -11,15 +10,6 @@ interface HeroProps {
   onCtaClick?: () => void;
 }
 
-/**
- * Hero — two-column layout per Figma design.
- *
- * Left: headline at display scale (PP Object Sans, tight leading 0.9,
- *       tracking −0.02em), subtext 3-line stack, primary + secondary CTA.
- * Right: product/proof visual with rounded-[2rem] corners.
- *
- * Color: #F1FAFF surface, #081254 ink — from Figma Native Works Design.
- */
 export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroProps) {
   return (
     <section
@@ -29,10 +19,7 @@ export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroPro
       data-method={selectionMethod}
     >
       {/* ── Nav ── */}
-      <nav className="flex items-center px-5 pt-7 pb-4 sm:px-10 lg:px-14 xl:px-[52px]">
-        {/* Logo mark — NW square from Figma */}
-        <NwLogo />
-      </nav>
+      <Nav variant="transparent" />
 
       {/* ── Two-column content ── */}
       <div className="flex flex-1 flex-col justify-start px-5 pb-12 pt-[8vh] sm:px-10 lg:px-14 lg:pb-16 lg:pt-[10vh] xl:px-[52px]">
@@ -40,21 +27,20 @@ export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroPro
 
           {/* ── Left column: text ── */}
           <div className="flex flex-col">
-
-            {/* Headline — Figma: 80px, leading 0.9, tracking -1.6px, #081254 */}
             <h1
-              className="mb-7 tracking-[-0.02em] sm:mb-8 lg:mb-9"
+              className="mb-7 sm:mb-8 lg:mb-9"
               style={{
-                color: "var(--ink)",
-                fontSize: "clamp(2.5rem, 5.5vw, 5rem)",
-                lineHeight: 0.92,
-                fontWeight: 400,
+                fontFamily:    "var(--font-display)",
+                color:         "var(--ink)",
+                fontSize:      "var(--text-hero)",
+                lineHeight:    "var(--heading-leading)",
+                fontWeight:    "var(--heading-weight)",
+                letterSpacing: "var(--heading-tracking)",
               }}
             >
               {content.headline.text}
             </h1>
 
-            {/* Subtext — Figma: PP Pangram Sans Medium 18px */}
             <p
               className="mb-9 max-w-[32rem] text-[1.0625rem] leading-[1.6] sm:mb-10 sm:text-[1.125rem]"
               style={{ color: "var(--ink)", fontWeight: 500 }}
@@ -62,32 +48,21 @@ export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroPro
               {content.description.text}
             </p>
 
-            {/* CTA buttons — Figma: filled + outlined pill, 48px height */}
             <div className="flex flex-wrap items-center gap-3">
-              {/* Primary — filled dark navy */}
               <button
                 data-cal-namespace="15min"
                 data-cal-link="native-works-oxvx0d/15min"
                 data-cal-config='{"layout":"month_view","useSlotsViewOnSmallScreen":"true"}'
                 onClick={onCtaClick}
                 className="inline-flex h-12 items-center rounded-full px-8 text-[1.0625rem] font-medium transition-all duration-150 hover:opacity-85 active:scale-[0.97]"
-                style={{
-                  background: "var(--ink)",
-                  color: "var(--ink-on-dark)",
-                  fontWeight: 500,
-                }}
+                style={{ background: "var(--ink)", color: "var(--ink-on-dark)", fontWeight: 500 }}
               >
                 {content.cta.label}
               </button>
 
-              {/* Secondary — outlined */}
               <button
                 className="inline-flex h-12 items-center rounded-full border px-8 text-[1.0625rem] font-medium transition-all duration-150 hover:opacity-65 active:scale-[0.97]"
-                style={{
-                  borderColor: "var(--ink)",
-                  color: "var(--ink)",
-                  fontWeight: 500,
-                }}
+                style={{ borderColor: "var(--ink)", color: "var(--ink)", fontWeight: 500 }}
               >
                 See how we work
               </button>
@@ -102,20 +77,8 @@ export function Hero({ content, stateKey, selectionMethod, onCtaClick }: HeroPro
   );
 }
 
-/* ── NW Logo mark ── */
-function NwLogo() {
-  return (
-    <img
-      src="/logoNativeWorks.jpg"
-      alt="Native Works"
-      className="h-[52px] w-[52px] rounded-lg object-cover"
-    />
-  );
-}
-
-/* ── Right column visual — full-height proof image ── */
+/* ── Right column visual ── */
 function HeroVisual({ type, content }: { type: string; content: string }) {
-  // Full-height proof visual — deimage.png as background fill
   if (type !== "kpi" && type !== "argument") {
     return (
       <div className="hidden lg:block w-full self-stretch min-h-[480px] overflow-hidden rounded-[2rem] relative">
@@ -160,7 +123,6 @@ function HeroVisual({ type, content }: { type: string; content: string }) {
     );
   }
 
-  // argument proof
   return (
     <div
       className="hidden w-full flex-col justify-center rounded-[2rem] p-10 lg:flex xl:p-12 self-stretch"

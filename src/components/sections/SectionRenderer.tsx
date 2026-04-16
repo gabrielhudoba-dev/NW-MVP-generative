@@ -10,13 +10,10 @@ interface SectionRendererProps {
 }
 
 /**
- * Section renderer — extends the Figma visual language (#F1FAFF / #081254)
- * through the rest of the page.
- *
- * ContentSection:      light surface, index label, large heading, body text
- * CtaSection:          dark navy inversion (#081254), outlined pill button
- * ProofSection:        raised surface, large quote text
- * BusinessModelSection: horizontal rule list, clean numbered items
+ * Section rhythm — heading LEFT, body RIGHT on desktop.
+ * Section number is a small label above the heading.
+ * Strong typographic contrast: large heading vs. smaller body.
+ * Pattern taken from reference: "The Work." / "The Method." structure.
  */
 export function SectionRenderer({ sectionIds, onCtaClick }: SectionRendererProps) {
   return (
@@ -25,8 +22,8 @@ export function SectionRenderer({ sectionIds, onCtaClick }: SectionRendererProps
         const section = SECTIONS_MAP[id];
         if (!section) return null;
 
-        const isCta = !!section.ctaLabel;
-        const isProof = !!section.proofRef;
+        const isCta    = !!section.ctaLabel;
+        const isProof  = !!section.proofRef;
 
         if (isCta) {
           return (
@@ -38,7 +35,7 @@ export function SectionRenderer({ sectionIds, onCtaClick }: SectionRendererProps
             />
           );
         }
-        if (isProof) return <ProofSection key={id} section={section} index={index + 1} />;
+        if (isProof)            return <ProofSection         key={id} section={section} index={index + 1} />;
         if (id === "business_model") return <BusinessModelSection key={id} section={section} index={index + 1} />;
         return <ContentSection key={id} section={section} index={index + 1} />;
       })}
@@ -46,49 +43,46 @@ export function SectionRenderer({ sectionIds, onCtaClick }: SectionRendererProps
   );
 }
 
-/* ── Index label ── */
-function SectionIndex({ index }: { index: number }) {
-  return (
-    <span
-      className="block text-[0.625rem] tabular-nums font-medium"
-      style={{ color: "var(--muted)", letterSpacing: "0.1em" }}
-    >
-      {String(index).padStart(2, "0")}
-    </span>
-  );
-}
+/* ── Shared padding ── */
+const px = "px-5 sm:px-10 lg:px-14 xl:px-[52px]";
 
-/* ── Content Section ── */
+/* ── Content Section — heading left / body right ── */
 function ContentSection({ section, index }: { section: SectionContent; index: number }) {
   if (!section.title && !section.body) return null;
   const paragraphs = section.body?.split("\n\n").filter(Boolean) ?? [];
 
   return (
-    <section
-      className="px-5 sm:px-10 lg:px-14 xl:px-[52px]"
-      style={{ background: "#fff" }}
-    >
+    <section className={px} style={{ background: "#fff" }}>
       <div style={{ height: "1px", background: "var(--rule)" }} />
 
-      <div className="py-16 sm:py-20 lg:py-24">
-        <div className="grid gap-8 lg:grid-cols-[88px_1fr] lg:gap-16">
-          <div className="pt-[0.3rem]">
-            <SectionIndex index={index} />
-          </div>
+      <div className="py-16 sm:py-20 lg:py-28">
+        {/* Number label */}
+        <p
+          className="mb-6 text-[0.625rem] tabular-nums font-medium"
+          style={{ color: "var(--muted)", letterSpacing: "0.12em" }}
+        >
+          {String(index).padStart(2, "0")}
+        </p>
 
-          <div className="max-w-[36rem]">
-            {section.title && (
-              <h2
-                className="mb-7 leading-[1.1] tracking-[-0.02em]"
-                style={{
-                  color: "var(--ink)",
-                  fontSize: "clamp(1.5rem, 2.75vw, 2.25rem)",
-                  fontWeight: 400,
-                }}
-              >
-                {section.title}
-              </h2>
-            )}
+        {/* Heading left / body right */}
+        <div className="grid gap-10 lg:grid-cols-2 lg:gap-20">
+          {section.title && (
+            <h2
+              className="leading-[1.05] tracking-[-0.025em]"
+              style={{
+                fontFamily:    "var(--font-display)",
+                color:         "var(--ink)",
+                fontSize:      "var(--text-section)",
+                fontWeight:    "var(--heading-weight)",
+                lineHeight:    "var(--heading-leading)",
+                letterSpacing: "var(--heading-tracking)",
+              }}
+            >
+              {section.title}
+            </h2>
+          )}
+
+          <div className="flex flex-col justify-end">
             {paragraphs.map((p, i) => (
               <p
                 key={i}
@@ -105,7 +99,7 @@ function ContentSection({ section, index }: { section: SectionContent; index: nu
   );
 }
 
-/* ── CTA Section — dark navy inversion ── */
+/* ── CTA Section — dark, large heading, description + CTA row ── */
 function CtaSection({
   section,
   index,
@@ -116,43 +110,54 @@ function CtaSection({
   onCtaClick?: () => void;
 }) {
   return (
-    <section style={{ background: "var(--surface-dark)" }}>
-      <div className="px-5 py-20 sm:px-10 sm:py-28 lg:px-14 lg:py-36 xl:px-[52px]">
+    <section className={px} style={{ background: "var(--surface-dark)" }}>
+      <div className="py-20 sm:py-28 lg:py-36">
+        {/* Number */}
         <p
-          className="mb-10 text-[0.625rem] tabular-nums font-medium sm:mb-14"
-          style={{ color: "var(--muted)", letterSpacing: "0.1em" }}
+          className="mb-8 text-[0.625rem] tabular-nums font-medium"
+          style={{ color: "rgba(241,250,255,0.3)", letterSpacing: "0.12em" }}
         >
           {String(index).padStart(2, "0")}
         </p>
 
+        {/* Heading */}
         {section.title && (
           <h2
-            className="mb-10 max-w-[22ch] leading-[1.06] tracking-[-0.025em] sm:mb-12"
+            className="mb-12 leading-[1.05] tracking-[-0.025em]"
             style={{
               color: "var(--ink-on-dark)",
-              fontSize: "clamp(2rem, 4.5vw, 3.75rem)",
-              fontWeight: 400,
+              fontSize:      "var(--text-section)",
+              fontWeight:    "var(--heading-weight)",
+              lineHeight:    "var(--heading-leading)",
+              letterSpacing: "var(--heading-tracking)",
             }}
           >
             {section.title}
           </h2>
         )}
 
-        {/* Outlined pill button — matches Figma secondary CTA style */}
-        <button
-          data-cal-namespace="15min"
-          data-cal-link="native-works-oxvx0d/15min"
-          data-cal-config='{"layout":"month_view","useSlotsViewOnSmallScreen":"true"}'
-          onClick={onCtaClick}
-          className="inline-flex h-12 items-center rounded-full border px-8 text-[1.0625rem] font-medium transition-all duration-150 hover:opacity-65 active:scale-[0.97]"
-          style={{
-            borderColor: "var(--ink-on-dark)",
-            color: "var(--ink-on-dark)",
-            fontWeight: 500,
-          }}
-        >
-          {section.ctaLabel}
-        </button>
+        {/* Body + CTA row */}
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          {section.body && (
+            <p
+              className="max-w-[28rem] text-[0.9375rem] leading-[1.7]"
+              style={{ color: "rgba(241,250,255,0.6)" }}
+            >
+              {section.body}
+            </p>
+          )}
+
+          <button
+            data-cal-namespace="15min"
+            data-cal-link="native-works-oxvx0d/15min"
+            data-cal-config='{"layout":"month_view","useSlotsViewOnSmallScreen":"true"}'
+            onClick={onCtaClick}
+            className="inline-flex h-12 shrink-0 items-center rounded-full border px-8 text-[1rem] font-medium transition-all duration-150 hover:opacity-65 active:scale-[0.97]"
+            style={{ borderColor: "var(--ink-on-dark)", color: "var(--ink-on-dark)" }}
+          >
+            {section.ctaLabel}
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -164,27 +169,40 @@ function ProofSection({ section, index }: { section: SectionContent; index: numb
   if (!proof?.content) return null;
 
   return (
-    <section style={{ background: "#fff" }}>
-      <div className="px-5 py-16 sm:px-10 sm:py-20 lg:px-14 lg:py-24 xl:px-[52px]">
-        <div className="grid gap-8 lg:grid-cols-[88px_1fr] lg:gap-16">
-          <div className="pt-[0.3rem]">
-            <SectionIndex index={index} />
-          </div>
+    <section className={px} style={{ background: "#fff" }}>
+      <div style={{ height: "1px", background: "var(--rule)" }} />
 
-          <div className="max-w-[44rem]">
-            {section.title && (
-              <p
-                className="mb-5 text-[0.625rem] font-medium uppercase tracking-[0.1em]"
-                style={{ color: "var(--muted)" }}
-              >
-                {section.title}
-              </p>
-            )}
+      <div className="py-16 sm:py-20 lg:py-28">
+        <p
+          className="mb-6 text-[0.625rem] tabular-nums font-medium"
+          style={{ color: "var(--muted)", letterSpacing: "0.12em" }}
+        >
+          {String(index).padStart(2, "0")}
+        </p>
+
+        <div className="grid gap-10 lg:grid-cols-2 lg:gap-20">
+          {section.title && (
+            <h2
+              className="leading-[1.05] tracking-[-0.025em]"
+              style={{
+                fontFamily:    "var(--font-display)",
+                color:         "var(--ink)",
+                fontSize:      "var(--text-section)",
+                fontWeight:    "var(--heading-weight)",
+                lineHeight:    "var(--heading-leading)",
+                letterSpacing: "var(--heading-tracking)",
+              }}
+            >
+              {section.title}
+            </h2>
+          )}
+
+          <div className="flex items-end">
             <p
               className="leading-[1.6] tracking-[-0.01em]"
               style={{
                 color: "var(--ink)",
-                fontSize: "clamp(1.125rem, 1.75vw, 1.375rem)",
+                fontSize: "clamp(1.0625rem, 1.5vw, 1.25rem)",
                 fontWeight: 500,
               }}
             >
@@ -197,59 +215,60 @@ function ProofSection({ section, index }: { section: SectionContent; index: numb
   );
 }
 
-/* ── Business Model Section ── */
+/* ── Business Model Section — ruled list ── */
 function BusinessModelSection({ section, index }: { section: SectionContent; index: number }) {
   const items = section.body?.split("\n").filter(l => l.trim()) ?? [];
 
   return (
-    <section
-      className="px-5 sm:px-10 lg:px-14 xl:px-[52px]"
-      style={{ background: "#fff" }}
-    >
+    <section className={px} style={{ background: "#fff" }}>
       <div style={{ height: "1px", background: "var(--rule)" }} />
 
-      <div className="py-16 sm:py-20 lg:py-24">
-        <div className="grid gap-8 lg:grid-cols-[88px_1fr] lg:gap-16">
-          <div className="pt-[0.3rem]">
-            <SectionIndex index={index} />
-          </div>
+      <div className="py-16 sm:py-20 lg:py-28">
+        <p
+          className="mb-6 text-[0.625rem] tabular-nums font-medium"
+          style={{ color: "var(--muted)", letterSpacing: "0.12em" }}
+        >
+          {String(index).padStart(2, "0")}
+        </p>
 
-          <div>
-            {section.title && (
-              <h2
-                className="mb-10 leading-[1.1] tracking-[-0.02em]"
-                style={{
-                  color: "var(--ink)",
-                  fontSize: "clamp(1.5rem, 2.75vw, 2.25rem)",
-                  fontWeight: 400,
-                }}
+        <div className="grid gap-10 lg:grid-cols-2 lg:gap-20">
+          {section.title && (
+            <h2
+              className="leading-[1.05] tracking-[-0.025em]"
+              style={{
+                fontFamily:    "var(--font-display)",
+                color:         "var(--ink)",
+                fontSize:      "var(--text-section)",
+                fontWeight:    "var(--heading-weight)",
+                lineHeight:    "var(--heading-leading)",
+                letterSpacing: "var(--heading-tracking)",
+              }}
+            >
+              {section.title}
+            </h2>
+          )}
+
+          <div style={{ borderTop: "1px solid var(--rule)" }}>
+            {items.map((item, i) => (
+              <div
+                key={i}
+                className="flex items-baseline gap-6 py-5"
+                style={{ borderBottom: "1px solid var(--rule)" }}
               >
-                {section.title}
-              </h2>
-            )}
-
-            <div style={{ borderTop: "1px solid var(--rule)" }}>
-              {items.map((item, i) => (
-                <div
-                  key={i}
-                  className="flex items-baseline gap-6 py-5"
-                  style={{ borderBottom: "1px solid var(--rule)" }}
+                <span
+                  className="w-5 shrink-0 text-[0.625rem] tabular-nums font-medium"
+                  style={{ color: "var(--muted)", letterSpacing: "0.08em" }}
                 >
-                  <span
-                    className="w-6 shrink-0 text-[0.625rem] tabular-nums font-medium"
-                    style={{ color: "var(--muted)", letterSpacing: "0.08em" }}
-                  >
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span
-                    className="text-[1.0625rem] leading-[1.35] tracking-[-0.01em]"
-                    style={{ color: "var(--ink)", fontWeight: 500 }}
-                  >
-                    {item}
-                  </span>
-                </div>
-              ))}
-            </div>
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span
+                  className="text-[1rem] leading-[1.4] tracking-[-0.01em]"
+                  style={{ color: "var(--ink)", fontWeight: 500 }}
+                >
+                  {item}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
