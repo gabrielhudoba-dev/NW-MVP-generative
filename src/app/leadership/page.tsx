@@ -14,18 +14,8 @@ export default function LeadershipPage() {
               lineHeight: "var(--heading-leading)",
               color: "var(--ink)",
             }}>
-            Leadership
-          </h1>
-          <h2 className="max-w-[28rem]" style={{
-              fontFamily: "var(--font-display)",
-              fontSize: "var(--text-h2)",
-              fontWeight: "var(--heading-weight)",
-              letterSpacing: "var(--heading-tracking)",
-              lineHeight: "var(--heading-leading)",
-              color: "var(--muted-strong)",
-            }}>
             Leadership &amp; Members
-          </h2>
+          </h1>
           <p style={{ color: "var(--muted)", marginTop: "1.5rem", fontSize: "0.9375rem" }}>
             Coming soon.
           </p>

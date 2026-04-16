@@ -54,16 +54,6 @@ export default async function SituationDetailPage({
             ← Back
           </Link>
 
-          <h3 className="mb-5" style={{
-              fontFamily:    "var(--font-display)",
-              fontSize:      "var(--text-h3)",
-              fontWeight:    "var(--heading-weight)",
-              letterSpacing: "var(--heading-tracking)",
-              lineHeight:    "var(--heading-leading)",
-              color:         "var(--muted-strong)",
-            }}>
-            Situations
-          </h3>
           <h1 style={{
               fontFamily:    "var(--font-display)",
               fontSize:      "var(--text-h1)",
