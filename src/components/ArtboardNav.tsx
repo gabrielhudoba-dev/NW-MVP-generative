@@ -127,27 +127,44 @@ const CardFrame = memo(function CardFrame({ href, label, iw, ih, sc, mounted, ha
   if (!mounted) return null;
 
   return (
-    <iframe
-      src={href}
-      title={label}
-      onLoad={onLoaded}
-      style={{
-        width:           iw,
-        height:          ih,
-        border:          "none",
-        transform:       `scale(${sc})`,
-        transformOrigin: "top left",
-        pointerEvents:   "none",
-        display:         "block",
-        position:        "absolute",
-        top:             0,
-        left:            0,
-        opacity:         hasLoaded ? 1 : 0,
-        transition:      "opacity 0.3s ease",
-      }}
-      tabIndex={-1}
-      aria-hidden="true"
-    />
+    <>
+      <iframe
+        src={href}
+        title={label}
+        onLoad={onLoaded}
+        scrolling="no"
+        style={{
+          width:           iw,
+          height:          ih,
+          border:          "none",
+          transform:       `scale(${sc})`,
+          transformOrigin: "top left",
+          pointerEvents:   "none",
+          touchAction:     "none",
+          display:         "block",
+          position:        "absolute",
+          top:             0,
+          left:            0,
+          opacity:         hasLoaded ? 1 : 0,
+          transition:      "opacity 0.3s ease",
+        }}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      {/* Transparent overlay — blocks touch events from reaching the iframe
+          on iOS Safari, where pointer-events:none doesn't prevent native
+          iframe touch-scroll. Touch passes through to canvas for panning. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position:      "absolute",
+          inset:         0,
+          background:    "transparent",
+          touchAction:   "none",
+          pointerEvents: "none",
+        }}
+      />
+    </>
   );
 });
 
@@ -391,15 +408,17 @@ export function ArtboardNav() {
       ref={canvasRef}
       style={{
         position: "fixed", inset: 0, zIndex: 50,
-        background: "#04082E",
-        backgroundImage: "radial-gradient(rgba(241,250,255,.18) 1px, transparent 1px)",
+        background: zoomTarget ? "#fff" : "#04082E",
+        backgroundImage: zoomTarget
+          ? "none"
+          : "radial-gradient(rgba(241,250,255,.18) 1px, transparent 1px)",
         backgroundSize: "18px 18px",
         overflow: "hidden",
         opacity: open ? 1 : 0,
         visibility: open ? "visible" : "hidden",
         transition: open
-          ? "opacity 0.05s ease, visibility 0s"
-          : "opacity 0.3s ease, visibility 0s 0.3s",
+          ? "opacity 0.05s ease, visibility 0s, background 0.3s ease"
+          : "opacity 0.3s ease, visibility 0s 0.3s, background 0.3s ease",
         pointerEvents: open ? undefined : "none",
         cursor: dragging ? "grabbing" : "grab",
         touchAction: "none",
@@ -435,6 +454,11 @@ export function ArtboardNav() {
               cursor: "pointer",
               background: "#fff",
               boxShadow: card.href === zoomTarget ? "none" : "0 2px 16px rgba(0,0,0,.32)",
+              touchAction: "none",
+              WebkitOverflowScrolling: "auto",
+              opacity: zoomTarget && card.href !== zoomTarget ? 0 : 1,
+              transition: zoomTarget ? "opacity 0.25s ease" : "none",
+              zIndex: card.href === zoomTarget ? 10 : 1,
             }}
           >
             <CardFrame

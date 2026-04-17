@@ -46,6 +46,36 @@
   font-display: swap;
 }
 
+/* ─── PP Radio Grotesk ─── */
+@font-face {
+  font-family: "PP Radio Grotesk";
+  src: url("/fonts/PPRadioGrotesk-Ultralight.woff2") format("woff2");
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PP Radio Grotesk";
+  src: url("/fonts/PPRadioGrotesk-Light.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PP Radio Grotesk";
+  src: url("/fonts/PPRadioGrotesk-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PP Radio Grotesk";
+  src: url("/fonts/PPRadioGrotesk-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ─── Design Tokens — from Figma: Native Works Design ─── */
 :root {
   /* Color */
@@ -61,7 +91,7 @@
   --accent:         #1540D4;
 
   /* Font families */
-  --font-display: "PP Object Sans", system-ui, sans-serif;
+  --font-display: "PP Radio Grotesk", system-ui, sans-serif;
 
   /* Typography — heading scale, ratio 1.618 (Golden Ratio) */
   --text-h1:        clamp(2rem, 4vw, 4rem);

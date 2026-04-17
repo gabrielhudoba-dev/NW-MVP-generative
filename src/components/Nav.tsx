@@ -28,7 +28,7 @@ export function Nav() {
       {/* Logo — always visible, switches to white when menu open */}
       <Link href="/" aria-label="Native Works home">
         <NwLogo
-          height="36"
+          height="32"
           style={{
             color:      open ? "var(--ink-on-dark)" : "var(--ink)",
             transition: "color 0.2s ease",
